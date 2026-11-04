@@ -1,0 +1,7 @@
+{
+  "extensions": ["ts"],
+  "reporter": "list",
+  "require": "ts-node/register",
+  "watch-files": ["frontend/src/**/*.ts"],
+  "spec": ["frontend/src/**/*.spec.ts"]
+}
