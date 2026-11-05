@@ -6,8 +6,8 @@ export class SimpleTurret {
     public name: string;
     
     public visionRadius: number = 45;  
-    public attackRange: number = 90;  
-    public damagePerFrame: number = 1;
+    public attackRange: number = 70;  
+    public damagePerFrame: number = 5;
     public angleDir: number;           
     public fov: number;                
     public lockedTarget: SimpleInvader | null = null; 
@@ -110,6 +110,7 @@ export class SimpleTurret {
     }
 
     public attack(invaders: SimpleInvader[]): void {
+        // 1. Проверяем старую зафиксированную цель
         if (this.lockedTarget) {
             const isAlive = this.lockedTarget.hp > 0;
             const dx = this.lockedTarget.x - this.x;
@@ -121,6 +122,7 @@ export class SimpleTurret {
             }
         }
 
+        // 2. Если турель СВОБОДНА, ищем любую видимую цель на поле
         let targetToTrack: SimpleInvader | null = this.lockedTarget;
 
         if (!targetToTrack) {
@@ -132,6 +134,7 @@ export class SimpleTurret {
             }
         }
 
+        // 3. Автонаведение ствола
         if (targetToTrack) {
             const dx = targetToTrack.x - this.x;
             const dy = targetToTrack.y - this.y;
@@ -140,14 +143,16 @@ export class SimpleTurret {
             this.angleDir = this.defaultAngle;
         }
 
+        // 4. Фиксируем боевой замок лазера
         if (!this.lockedTarget && targetToTrack) {
             if (this.isInsideAttackSector(targetToTrack)) {
                 this.lockedTarget = targetToTrack;
             }
         }
 
+        // 5. НАНЕСЕНИЕ УРОНА (ИСПРАВЛЕНО: используем динамическое свойство класса)
         if (this.lockedTarget) {
-            this.lockedTarget.hp -= this.damagePerFrame;
+            this.lockedTarget.hp -= this.damagePerFrame; 
         }
     }
 }
