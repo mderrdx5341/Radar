@@ -14,20 +14,20 @@ export class CanvasRenderer {
         this.ctx = context;
     }
 
-public render(
+    public render(
         invaders: SimpleInvader[], 
         radars: SimpleRadar[], 
         turrets: SimpleTurret[],
         selectedEntity: SimpleRadar | SimpleTurret | null,
-        // НОВЫЕ ПАРАМЕТРЫ ДЛЯ СТРОИТЕЛЬСТВА:
         buildType: string | null,
         ghostX: number,
-        ghostY: number
+        ghostY: number,
+        score: number // НОВОЕ: Передаем количество сбитых БПЛА
     ): void {
         this.clearScreen();
         this.drawGrid();
         
-        // 1. Рисуем существующие радары и турели
+        // 1. Отрисовка существующих радаров и турелей
         radars.forEach(radar => {
             this.drawRadar(radar);
             if (selectedEntity === radar) this.drawSelectionFrame(radar.x, radar.y);
@@ -38,21 +38,49 @@ public render(
             if (selectedEntity === turret) this.drawSelectionFrame(turret.x, turret.y);
         });
 
-        // 2. Рисуем призрака будущей постройки под курсором мыши
+        // 2. Отрисовка призрака постройки
         if (buildType) {
             this.drawGhostBuilding(buildType, ghostX, ghostY);
         }
 
-        // 3. Рисуем инвейдеров
+        // 3. Отрисовка инвейдеров
         invaders.forEach(invader => this.drawInvader(invader));
 
-        // 4. Отрисовка нижнего HUD-интерфейса (кнопки покупки башен)
+        // 4. Отрисовка нижней панели магазина
         this.drawShopUI();
 
-        // 5. Отрисовка имени выбранного элемента
+        // 5. Отрисовка имени выбранного элемента (справа сверху)
         if (selectedEntity) {
             this.drawSelectedNameUI(selectedEntity.name);
         }
+
+        // 6. НОВОЕ: Отрисовка счётчика сбитых БПЛА (слева сверху)
+        this.drawScoreUI(score);
+    }
+
+    /**
+     * Выводит количество сбитых БПЛА в левом верхнем углу холста
+     */
+    private drawScoreUI(score: number): void {
+        this.ctx.save();
+        
+        // Рисуем стильную темную подложку под текст
+        this.ctx.fillStyle = 'rgba(22, 27, 34, 0.8)';
+        this.ctx.fillRect(20, 20, 180, 40);
+        this.ctx.strokeStyle = '#30363d';
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(20, 20, 180, 40);
+
+        // Настройка выравнивания текста внутри плашки
+        this.ctx.fillStyle = '#ff7b72'; // Красноватый оттенок под цвет инвейдеров
+        this.ctx.font = 'bold 13px sans-serif';
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'middle';
+        
+        // Пишем текст
+        this.ctx.fillText(`Сбито БПЛА: ${score}`, 35, 40);
+        
+        this.ctx.restore();
     }
 
     /**

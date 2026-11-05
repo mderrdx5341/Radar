@@ -18,6 +18,8 @@ let selectedEntity: SimpleRadar | SimpleTurret | null = null;
 let currentMouseX = 0;
 let currentMouseY = 0;
 
+let score = 0;
+
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 canvas.addEventListener('mousedown', (event: MouseEvent) => {
@@ -118,25 +120,26 @@ function gameTick(timestamp: number) {
     invaders.forEach(invader => {
         invader.updateVisibility(deltaTime);
         
-        // --- БЕЗОПАСНЫЙ МГНОВЕННЫЙ СБРОС НА ГРАНИЦАХ СЕКТОРОВ ---
+        // Безопасный мгновенный сброс на границах секторов
         if (invader.isVisible) {
-            // Проверяем, видит ли его ХОТЯ БЫ ОДИН радар на карте
             const seenByAnyRadar = radars.some(radar => radar.isInsideSector(invader));
-            
-            // Проверяем, видит ли его ХОТЯ БЫ ОДНА турель (в круге обзора или боевом секторе)
-            // Для этого временно заглянем в её метод коллизии. У турели пассивный круг = 45px
             const seenByAnyTurret = turrets.some(turret => {
                 const dist = Math.sqrt((turret.x - invader.x) ** 2 + (turret.y - invader.y) ** 2);
-                return dist <= turret.visionRadius || dist <= turret.attackRange; // Упрощенная проверка для UI
+                return dist <= turret.visionRadius || dist <= turret.attackRange;
             });
 
-            // Если враг вылетел из секторов ВСЕХ радаров и турелей — мгновенно гасим его!
             if (!seenByAnyRadar && !seenByAnyTurret) {
                 invader.visibilityTimer = 0;
             }
         }
         
+        // ПРОВЕРКА ГИБЕЛИ ИЛИ ПРОРЫВА
         if (invader.y > 540 || invader.hp <= 0) {
+            // НОВОЕ: Если враг погиб от лазеров турели, увеличиваем счёт очков
+            if (invader.hp <= 0) {
+                score++;
+            }
+
             invader.y = 0;
             invader.x = getRandomX();
             invader.hp = 100;
@@ -146,15 +149,31 @@ function gameTick(timestamp: number) {
         }
     });
 
-    // 2. Движение и логика (остается без изменений)
-    radars.forEach(radar => radar.rotate(deltaTime));
+    radars.forEach(radar => {
+        if (radar.isTrackingMouse) {
+            radar.setTargetDirection(currentMouseX, currentMouseY);
+        }
+        radar.rotate(deltaTime);
+    });
+
     turrets.forEach(turret => turret.updateMovement(deltaTime));
     
     radars.forEach(radar => radar.scan(invaders));
     turrets.forEach(turret => turret.scan(invaders));
-    turrets.forEach(turret => turret.attack(invaders));
+    turrets.forEach(turret => turret.attack(invaders, deltaTime));
     
-    renderer.render(invaders, radars, turrets, selectedEntity, placement.currentBuildType, currentMouseX, currentMouseY);
+    // ОБНОВЛЕНО: Передаем счетчик score восьмым аргументом в рендерер
+    renderer.render(
+        invaders, 
+        radars, 
+        turrets, 
+        selectedEntity, 
+        placement.currentBuildType, 
+        currentMouseX, 
+        currentMouseY,
+        score
+    );
+
     requestAnimationFrame(gameTick);
 }
 

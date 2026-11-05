@@ -50,7 +50,7 @@ describe('Юнит-тестирование боевой турели (SimpleTur
         turret.attack([sideInvader], 500);
         expect(turret.angleDir).to.equal(0); // Ствол наведен идеально!
         expect(turret.lockedTarget).to.equal(sideInvader); // Боевой замок сработал
-        expect(sideInvader.hp).to.equal(99); // Нанесен урон
+        expect(sideInvader.hp).to.equal(95); // Нанесен дефолтный урон (5)
     });
 
     it('должен сбрасывать фиксацию цели, если враг улетел за пределы максимального радиуса', () => {
@@ -98,6 +98,35 @@ describe('Юнит-тестирование боевой турели (SimpleTur
         expect(invader.hp).to.equal(80); // 100 - 20 = 80
     });
 
+    it('должен выбирать БЛИЖАЙШЕГО видимого врага при поиске цели, но удерживать его до конца', () => {
+        const turret = new SimpleTurret(100, 100, 'Turret-Test', -Math.PI / 2, 45);
+        
+        // Создаем двух врагов. invader1 дальше (65px), invader2 ближе (40px)
+        const invader1 = new SimpleInvader(100, 165); 
+        const invader2 = new SimpleInvader(100, 140); 
+        
+        invader1.visibilityTimer = 1000;
+        invader2.visibilityTimer = 1000;
+
+        // 1. Первый кадр: турель свободна. Она обязана проигнорировать порядок в массиве 
+        // и выбрать ближнего врага (invader2), плавно начав разворот ствола к нему
+        turret.attack([invader1, invader2], 1000); // Даем 1000мс, чтобы ствол навелся до конца
+        
+        expect(turret.lockedTarget).to.equal(invader2); // Намертво захватила БЛИЖАЙШЕГО
+        expect(invader2.hp).to.equal(95); // Урон пошел ближайшему (100 - 5 = 95)
+        expect(invader1.hp).to.equal(100); // Дальний остался невредим
+
+        // 2. Второй кадр: симулируем, что invader1 подлетел еще ближе (стал на дистанцию 30px)
+        // Но так как турель УЖЕ ведет огонь по invader2, она обязана удерживать замок и игнорировать смену дистанций
+        invader1.y = 130; 
+        
+        turret.attack([invader1, invader2], 16);
+        
+        expect(turret.lockedTarget).to.equal(invader2); // Цель не сменилась!
+        expect(invader2.hp).to.equal(90); // Продолжает плавить старую цель
+        expect(invader1.hp).to.equal(100);
+    });
+
     it('должен игнорировать изменение угла, если дельта времени в атаке равна нулю', () => {
         const turret = new SimpleTurret(100, 100, 'Тест', -Math.PI / 2);
         const sideInvader = new SimpleInvader(150, 100);
@@ -126,7 +155,7 @@ describe('Юнит-тестирование боевой турели (SimpleTur
         expect(turret.y).to.equal(100);
     });
 
-    it('должен мгновенно фиксировать турель в конечной точке, если шаг превышает оставщееся расстояние', () => {
+    it('должен мгновенно фиксировать турель в конечной точке, если шаг превышает оставшееся расстояние', () => {
         const turret = new SimpleTurret(100, 100, 'Тест-ПВО');
         turret.moveTo(105, 100); // Отрезок всего 5 пикселей
 
