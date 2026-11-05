@@ -1,250 +1,111 @@
-import { 
-    SimpleInvader, SimpleRadar, SimpleTurret, RouteManager,
-    PowerNode, RepairBay, ResourceHarvester, SimpleBuilding 
-} from '@/entities';
+import { SimpleRadar, SimpleTurret, RouteManager } from '@/entities';
 import { PlacementManager } from '@/entities/PlacementManager';
 import { CanvasRenderer } from '@/render/CanvasRenderer';
+import { InputManager, CameraSystem, CollisionManager, GameState } from '@/services';
 
 const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
 const renderer = new CanvasRenderer('gameCanvas');
 const placement = new PlacementManager();
 const routeManager = new RouteManager();
 
-// --- РАЗМЕРЫ СТРАТЕГИЧЕСКОЙ КАРТЫ (МИРОВЫЕ КООРДИНАТЫ) ---
+// Инициализация периферийных сервисов
+const input = new InputManager(canvas);
+const collisionManager = new CollisionManager();
+
 const WORLD_WIDTH = 1600;
 const WORLD_HEIGHT = 1200;
-
-// --- НАСТРОЙКИ ВИРТУАЛЬНОЙ КАМЕРЫ ---
-let cameraX = 160; 
-let cameraY = 480; 
-
-let isDragging = false;
-let startDragX = 0;
-let startDragY = 0;
-let startCamX = 0;
-let startCamY = 0;
-
-// --- СОСТОЯНИЕ ТАКТИЧЕСКОЙ ПАУЗЫ ---
-let isPaused = false; 
-
-// Отслеживание клавиш WASD
-const keys: { [key: string]: boolean } = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
-
-// Функция динамической подстройки под экран пользователя (Защита от мыла)
-function resizeCanvas() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    clampCamera();
-}
-window.addEventListener('resize', resizeCanvas);
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-function clampCamera() {
-    cameraX = Math.max(0, Math.min(WORLD_WIDTH - canvas.width, cameraX));
-    cameraY = Math.max(0, Math.min(WORLD_HEIGHT - (canvas.height - 60), cameraY));
-}
+const camera = new CameraSystem(WORLD_WIDTH, WORLD_HEIGHT, canvas.width, canvas.height);
 
-// Первоначальное выставление камеры строго вниз тыла
-cameraX = (WORLD_WIDTH - canvas.width) / 2;
-cameraY = WORLD_HEIGHT - (canvas.height - 60);
-clampCamera();
+// Инициализация Менеджера Состояния Игры
+const state = new GameState(routeManager);
 
-// Инициализация оборонительных рубежей
-const radars: SimpleRadar[] = [new SimpleRadar(800, 1000, 'РЛС-1')];
-const turrets: SimpleTurret[] = [new SimpleTurret(800, 1080, 'ПВО-1')];
-
-// ЖЕСТКИЙ ФИКС: Разворачиваем 3 физических здания в тылу на высоте Y: 1120
-const buildings: SimpleBuilding[] = [
-    new PowerNode(400, 1120, 'Энергоблок ⚡'),
-    new RepairBay(800, 1120, 'Ремонтный блок 🛠️'),
-    new ResourceHarvester(1200, 1120, 'Ресурсная шахта 💎')
-];
-
-let selectedEntity: SimpleRadar | SimpleTurret | null = null;
-let currentMouseX = 0;
-let currentMouseY = 0;
-let score = 0;
-
-canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-
-window.addEventListener('keydown', (e) => {
-    const code = e.code; 
-    if (code in keys) keys[code] = true;
-    if (code === 'Space') isPaused = !isPaused;
+window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    camera.clamp(canvas.width, canvas.height);
 });
 
-window.addEventListener('keyup', (e) => {
-    const code = e.code;
-    if (code in keys) keys[code] = false;
+// --- ДЕКЛАРАТИВНЫЕ ПОДПИСКИ НА ИГРОВЫЕ СОБЫТИЯ ЧЕРЕЗ INPUTMANAGER ---
+
+input.onKeyPress('Space', () => {
+    if (!state.isGameOver) state.isPaused = !state.isPaused;
 });
 
-canvas.addEventListener('mousedown', (event: MouseEvent) => {
-    const rect = canvas.getBoundingClientRect();
-    const screenX = event.clientX - rect.left;
-    const screenY = event.clientY - rect.top;
-    const shopYThreshold = canvas.height - 60;
+input.onMouseClick(0, (screenX, screenY) => {
+    if (state.isGameOver) return;
 
-    if (event.button === 0) {
-        if (screenY > shopYThreshold) {
-            if (screenX >= 20 && screenX <= 160) placement.startBuilding('RADAR');
-            if (screenX >= 180 && screenX <= 320) placement.startBuilding('TURRET');
-            if (screenX >= 340 && screenX <= 480) isPaused = !isPaused;
-            return;
-        }
-
-        const worldX = screenX + cameraX;
-        const worldY = screenY + cameraY;
-
-        if (placement.currentBuildType) {
-            const tooCloseRadar = radars.some(r => Math.sqrt((r.x - worldX) ** 2 + (r.y - worldY) ** 2) < 12);
-            const tooCloseTurret = turrets.some(t => Math.sqrt((t.x - worldX) ** 2 + (t.y - worldY) ** 2) < 12);
-
-            if (!tooCloseRadar && !tooCloseTurret) {
-                if (placement.currentBuildType === 'RADAR') radars.push(new SimpleRadar(worldX, worldY, `РЛС-${radars.length + 1}`));
-                if (placement.currentBuildType === 'TURRET') turrets.push(new SimpleTurret(worldX, worldY, `ПВО-${turrets.length + 1}`));
-                placement.cancelBuilding(); 
-            }
-            return;
-        }
-
-        const clickedRadar = radars.find(r => Math.abs(r.x - worldX) <= 15 && Math.abs(r.y - worldY) <= 15);
-        const clickedTurret = turrets.find(t => Math.abs(t.x - worldX) <= 15 && Math.abs(t.y - worldY) <= 15);
-
-        selectedEntity = clickedRadar || clickedTurret || null;
-
-    } else if (event.button === 1) {
-        isDragging = true;
-        startDragX = screenX;
-        startDragY = screenY;
-        startCamX = cameraX;
-        startCamY = cameraY;
-        event.preventDefault();
-
-    } else if (event.button === 2) {
-        if (placement.currentBuildType) {
-            placement.cancelBuilding();
-            return;
-        }
-        const worldX = screenX + cameraX;
-        const worldY = screenY + cameraY;
-
-        if (selectedEntity instanceof SimpleTurret) selectedEntity.moveTo(worldX, worldY);
-        if (selectedEntity instanceof SimpleRadar) {
-            selectedEntity.startTracking();
-            selectedEntity.setTargetDirection(worldX, worldY);
-        }
+    // Клик по нижней HUD-панели управления магазином
+    if (screenY > canvas.height - 60) {
+        if (screenX >= 20 && screenX <= 160) placement.startBuilding('RADAR');
+        if (screenX >= 180 && screenX <= 320) placement.startBuilding('TURRET');
+        if (screenX >= 340 && screenX <= 480) state.isPaused = !state.isPaused;
+        return;
     }
-});
 
-canvas.addEventListener('mousemove', (event: MouseEvent) => {
-    const rect = canvas.getBoundingClientRect();
-    const screenX = event.clientX - rect.left;
-    const screenY = event.clientY - rect.top;
+    const worldPos = camera.screenToWorld(screenX, screenY);
 
-    currentMouseX = screenX;
-    currentMouseY = screenY;
+    // Режим активного строительства
+    if (placement.currentBuildType) {
+        const tooCloseRadar = state.radars.some(r => Math.sqrt((r.x - worldPos.x) ** 2 + (r.y - worldPos.y) ** 2) < 12);
+        const tooCloseTurret = state.turrets.some(t => Math.sqrt((t.x - worldPos.x) ** 2 + (t.y - worldPos.y) ** 2) < 12);
 
-    if (isDragging) {
-        const dx = screenX - startDragX;
-        const dy = screenY - startDragY;
-        cameraX = startCamX - dx;
-        cameraY = startCamY - dy;
-        clampCamera();
+        if (!tooCloseRadar && !tooCloseTurret) {
+            if (placement.currentBuildType === 'RADAR') state.radars.push(new SimpleRadar(worldPos.x, worldPos.y, `РЛС-${state.radars.length + 1}`));
+            if (placement.currentBuildType === 'TURRET') state.turrets.push(new SimpleTurret(worldPos.x, worldPos.y, `ПВО-${state.turrets.length + 1}`));
+            placement.cancelBuilding(); 
+        }
+        return;
     }
+
+    // Выбор юнита на карте
+    const clickedRadar = state.radars.find(r => Math.abs(r.x - worldPos.x) <= 15 && Math.abs(r.y - worldPos.y) <= 15);
+    const clickedTurret = state.turrets.find(t => Math.abs(t.x - worldPos.x) <= 15 && Math.abs(t.y - worldPos.y) <= 15);
+
+    state.selectedEntity = clickedRadar || clickedTurret || null;
 });
 
-canvas.addEventListener('mouseup', (event: MouseEvent) => {
-    if (event.button === 1) isDragging = false; 
-    if (event.button === 2 && selectedEntity instanceof SimpleRadar) selectedEntity.stopTracking();
-});
+input.onMouseClick(2, (screenX, screenY) => {
+    if (state.isGameOver) return;
+    if (placement.currentBuildType) {
+        placement.cancelBuilding();
+        return;
+    }
 
-const invaders: SimpleInvader[] = [];
-routeManager.spawnPoints.forEach(spawnX => {
-    const invader = new SimpleInvader(spawnX, Math.floor(Math.random() * -300) - 50);
-    invader.waypoints = routeManager.generateFlightPlan(invader.spawnPointX, invader.y);
-    invaders.push(invader);
+    const worldPos = camera.screenToWorld(screenX, screenY);
+
+    if (state.selectedEntity instanceof SimpleTurret) state.selectedEntity.moveTo(worldPos.x, worldPos.y);
+    if (state.selectedEntity instanceof SimpleRadar) {
+        state.selectedEntity.startTracking();
+        state.selectedEntity.setTargetDirection(worldPos.x, worldPos.y);
+    }
 });
 
 let lastTime = performance.now();
-
-// Создаем фиктивный экономический контекст для передачи в здания
-const econContext = {
-    addGold: (amount: number) => {
-        console.log(`[Экономика]: Добыто золота: +${amount} (Шахта функционирует)`);
-    }
-};
 
 function gameTick(timestamp: number) {
     const deltaTime = timestamp - lastTime;
     lastTime = timestamp;
 
-    const camSpeed = 7;
-    if (keys.KeyW) cameraY -= camSpeed;
-    if (keys.KeyS) cameraY += camSpeed;
-    if (keys.KeyA) cameraX -= camSpeed;
-    if (keys.KeyD) cameraX += camSpeed;
-    clampCamera();
-
-    if (isPaused) {
-        radars.forEach(radar => {
-            if (radar.isTrackingMouse) radar.setTargetDirection(currentMouseX + cameraX, currentMouseY + cameraY);
-        });
-
-        renderer.render(
-            invaders, radars, turrets, selectedEntity, 
-            placement.currentBuildType, currentMouseX + cameraX, currentMouseY + cameraY, score,
-            routeManager.getDiscoveredTurrets(), cameraX, cameraY, isPaused, buildings
-        );
-        requestAnimationFrame(gameTick);
-        return;
-    }
-
-    // Обновление пассивных систем зданий (генерация ресурсов и т.д.)
-    buildings.forEach(building => {
-        building.update(deltaTime, econContext);
-    });
-
-    radars.forEach(radar => {
-        if (radar.isTrackingMouse) radar.setTargetDirection(currentMouseX + cameraX, currentMouseY + cameraY);
-        radar.rotate(deltaTime);
-        radar.scan(invaders);
-    });
-
-    invaders.forEach(invader => {
-        invader.updateVisibility(deltaTime);
-        
-        if (invader.y > 1200 || invader.hp <= 0) {
-            if (invader.hp <= 0) {
-                score++;
-                const killerTurret = turrets.find(t => t.currentTarget === invader);
-                if (killerTurret) routeManager.reportHazard(killerTurret);
-            }
-
-            invader.y = Math.floor(Math.random() * -100) - 20;
-            invader.x = invader.spawnPointX;
-            invader.hp = 100;
-            invader.visibilityTimer = 0;
-            invader.moveAngle = Math.PI / 2;
-            
-            invader.waypoints = routeManager.generateFlightPlan(invader.spawnPointX, invader.y);
-        } else {
-            invader.moveDown();
-        }
-    });
-
-    turrets.forEach(turret => {
-        turret.updateMovement(deltaTime);
-        turret.scan(invaders);
-        turret.attack(invaders, deltaTime);
-    });
+    const mousePos = input.getMousePosition();
     
-    // Передаем массив зданий одиннадцатым аргументом в рендерер
+    // 1. Обновляем виртуальную камеру
+    camera.update(canvas.width, canvas.height, input, state.isGameOver);
+
+    // Переводим экранную мышь в мировые координаты карты
+    const worldMouse = camera.screenToWorld(mousePos.x, mousePos.y);
+
+    // 2. Делегируем ВСЮ симуляцию игрового процесса и коллизий в GameState
+    state.update(deltaTime, input, collisionManager, worldMouse);
+    
+    // 3. Отправляем текущий слепок состояния на компонентный рендеринг
     renderer.render(
-        invaders, radars, turrets, selectedEntity, 
-        placement.currentBuildType, currentMouseX + cameraX, currentMouseY + cameraY, score,
-        routeManager.getDiscoveredTurrets(), cameraX, cameraY, isPaused, buildings
+        state.invaders, state.radars, state.turrets, state.selectedEntity, 
+        placement.currentBuildType, worldMouse.x, worldMouse.y, state.score,
+        routeManager.getDiscoveredTurrets(), camera.x, camera.y, state.isPaused, state.buildings, state.isGameOver
     );
 
     requestAnimationFrame(gameTick);

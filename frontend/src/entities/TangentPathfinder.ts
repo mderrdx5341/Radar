@@ -3,11 +3,10 @@ import { Waypoint } from './RouteManager';
 
 export class TangentPathfinder {
     /**
-     * Ищет кратчайший геометрический путь в обход массива турелей ПВО
+     * ИСПРАВЛЕНО: Теперь принимает динамические targetX и targetY бункера-цели
      */
-    public findShortestPath(startX: number, startY: number, turrets: SimpleTurret[]): Waypoint[] {
+    public findShortestPath(startX: number, startY: number, turrets: SimpleTurret[], targetX: number, targetY: number): Waypoint[] {
         const criticalRadius = 70 + 6; // 76px (Радиус атаки + корпус дрона)
-        const targetY = startY + 600;
 
         interface Node {
             x: number;
@@ -25,7 +24,7 @@ export class TangentPathfinder {
             y: Math.round(startY),
             parent: null,
             g: 0,
-            f: targetY - startY
+            f: Math.sqrt((targetX - startX) ** 2 + (targetY - startY) ** 2)
         };
         openList.push(startNode);
 
@@ -42,7 +41,8 @@ export class TangentPathfinder {
             if (closedSet.has(key)) continue;
             closedSet.add(key);
 
-            if (curr.y >= targetY) {
+            // Симуляция завершена, если луч подобрался к уровню здания назначения
+            if (curr.y >= targetY - 20) {
                 endNode = curr;
                 break;
             }
@@ -54,7 +54,7 @@ export class TangentPathfinder {
                 const nextX = curr.x + offset_x;
                 const nextY = curr.y + dy;
 
-                if (nextX < 30 || nextX > 770) continue;
+                if (nextX < 30 || nextX > 1570) continue;
 
                 let hitWall = false;
                 for (const turret of turrets) {
@@ -69,16 +69,11 @@ export class TangentPathfinder {
 
                 const stepDist = Math.sqrt(offset_x * offset_x + dy * dy);
                 const g = curr.g + stepDist;
-                const h = targetY - nextY;
+                // Эвристическая оценка H-cost теперь честно считает расстояние до координат бункера
+                const h = Math.sqrt((targetX - nextX) ** 2 + (targetY - nextY) ** 2);
                 const f = g + h;
 
-                openList.push({
-                    x: nextX,
-                    y: nextY,
-                    parent: curr,
-                    g,
-                    f
-                });
+                openList.push({ x: nextX, y: nextY, parent: curr, g, f });
             }
         }
 
@@ -92,8 +87,10 @@ export class TangentPathfinder {
             rawPath.reverse();
         } else {
             rawPath.push({ x: startX, y: startY });
-            rawPath.push({ x: startX, y: targetY });
         }
+        
+        // Финальная точка маршрута — строго центр бункера назначения
+        rawPath.push({ x: targetX, y: targetY });
 
         // --- АЛГОРИТМ НАТЯЖЕНИЯ НИТИ (PATH SMOOTHING) ---
         const optimizedPath: Waypoint[] = [];
@@ -119,9 +116,6 @@ export class TangentPathfinder {
         return optimizedPath;
     }
 
-    /**
-     * Вспомогательный метод проверки прямой видимости между двумя точками
-     */
     private isLineSafe(p1: Waypoint, p2: Waypoint, turrets: SimpleTurret[], radius: number): boolean {
         for (let i = 1; i <= 8; i++) {
             const t = i / 9;

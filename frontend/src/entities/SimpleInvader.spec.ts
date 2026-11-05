@@ -2,6 +2,7 @@ import { expect } from 'chai';
 import { SimpleInvader } from './SimpleInvader';
 import { SimpleTurret } from './SimpleTurret';
 import { RouteManager } from './RouteManager';
+import { SimpleBuilding } from './buildings';
 
 describe('Юнит-тестирование врага с путевыми листами Менеджера Маршрутов (SimpleInvader)', () => {
     
@@ -37,13 +38,19 @@ describe('Юнит-тестирование врага с путевыми ли�
     it('должен плавно изменять курс и лететь по точкам, выданным менеджером маршрутов', () => {
         const manager = new RouteManager();
         const turret = new SimpleTurret(100, 150, 'Тест-ПВО');
+
+        const mockBuildings = [
+            new (class extends SimpleBuilding {
+                update() {}
+            })(100, 300, 'POWER', 'Тестовый бункер', 100)
+        ];
         
         // Имитируем, что рой уже знает про турель
         manager.reportHazard(turret);
 
         const invader = new SimpleInvader(105, 20);
         // Получаем готовый полетный план из менеджера
-        invader.waypoints = manager.generateFlightPlan(invader.spawnPointX, invader.y);
+        invader.waypoints = manager.generateFlightPlan(invader.spawnPointX, invader.y, mockBuildings);
 
         expect(invader.waypoints.length).to.be.greaterThan(0);
 

@@ -34,7 +34,8 @@ export class CanvasRenderer {
         cameraX: number,
         cameraY: number,
         isPaused: boolean,
-        buildings: SimpleBuilding[] // ПРИНЯТО: Список объектов инфраструктуры
+        buildings: SimpleBuilding[], // ПРИНЯТО: Список объектов инфраструктуры
+        isGameOver: boolean
     ): void {
         const scrWidth = this.canvas.width;
         const scrHeight = this.canvas.height;
@@ -82,5 +83,16 @@ export class CanvasRenderer {
         }
 
         this.uiRenderer.drawScoreUI(score);
+
+        if (isGameOver) {
+            const powerNodes = buildings.filter(b => b.type === 'POWER');
+            const allPowerDestroyed = powerNodes.every(b => b.isDestroyed);
+            
+            let reason = 'Все объекты инфраструктуры базы полностью уничтожены.';
+            if (allPowerDestroyed) {
+                reason = 'Критический сбой: Энергоблок уничтожен. Оборона обесточена.';
+            }
+            this.uiRenderer.drawGameOverOverlay(scrWidth, scrHeight, reason);
+        }
     }
 }

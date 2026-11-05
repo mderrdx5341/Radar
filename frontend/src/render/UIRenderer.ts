@@ -5,6 +5,9 @@ export class UIRenderer {
         this.ctx = ctx;
     }
 
+    /**
+     * Отрисовка белой рамки вокруг выбранного на карте объекта
+     */
     public drawSelectionFrame(x: number, y: number): void {
         this.ctx.save();
         this.ctx.strokeStyle = '#ffffff'; 
@@ -13,6 +16,9 @@ export class UIRenderer {
         this.ctx.restore();
     }
 
+    /**
+     * Отрисовка счетчика уничтоженных БПЛА (слева сверху)
+     */
     public drawScoreUI(score: number): void {
         this.ctx.save();
         this.ctx.fillStyle = 'rgba(22, 27, 34, 0.85)';
@@ -28,6 +34,9 @@ export class UIRenderer {
         this.ctx.restore();
     }
 
+    /**
+     * Отрисовка тактической панели с именем выделенного юнита (справа сверху)
+     */
     public drawSelectedNameUI(canvasWidth: number, name: string): void {
         this.ctx.save();
         this.ctx.fillStyle = 'rgba(22, 27, 34, 0.85)';
@@ -43,6 +52,9 @@ export class UIRenderer {
         this.ctx.restore();
     }
 
+    /**
+     * Отрисовка полупрозрачного силуэта-призрака будущей постройки с радиусами действия
+     */
     public drawGhostBuilding(type: string, x: number, y: number): void {
         this.ctx.save();
         if (type === 'RADAR') {
@@ -101,8 +113,7 @@ export class UIRenderer {
         this.ctx.fillStyle = '#c9d1d9';
         this.ctx.fillText('2. + ПВО (ЛКМ)', 250, shopY + 30);
 
-        // 3. НОВАЯ КНОПКА: Тактическая Пауза (X: 340-480)
-        // Менят цвет фона с серого на предупреждающий оранжевый, если игра приостановлена
+        // 3. Кнопка Тактическая Пауза
         this.ctx.fillStyle = isPaused ? 'rgba(214, 116, 34, 0.2)' : '#21262d';
         this.ctx.fillRect(340, shopY + 10, 140, 40);
         this.ctx.strokeStyle = isPaused ? '#d67422' : '#8b949e';
@@ -112,10 +123,43 @@ export class UIRenderer {
         
         this.ctx.restore();
 
-        // Если игра на паузе — выводим крупный красивый оверлей прямо по центру экрана
         if (isPaused) {
             this.drawPauseOverlay(canvasWidth, canvasHeight);
         }
+    }
+
+    /**
+     * ЖЁСТКИЙ ФИКС: Отрисовка экрана тактического поражения Game Over
+     */
+    public drawGameOverOverlay(width: number, height: number, reason: string): void {
+        this.ctx.save();
+        // Глубокое притемнение поля боя
+        this.ctx.fillStyle = 'rgba(7, 10, 14, 0.85)';
+        this.ctx.fillRect(0, 0, width, height);
+
+        // Массивная темная тактическая панель по центру
+        this.ctx.fillStyle = 'rgba(22, 27, 34, 0.95)';
+        this.ctx.fillRect(width / 2 - 240, height / 2 - 70, 480, 120);
+        this.ctx.strokeStyle = '#ff4444'; // Красная рамка тревоги
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(width / 2 - 240, height / 2 - 70, 480, 120);
+
+        // Главное предупреждение
+        this.ctx.fillStyle = '#ff7b72';
+        this.ctx.font = 'bold 16px sans-serif';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText('СВЯЗЬ ПОТЕРЯНА. ПЕРИМЕТР ПРОРВАН', width / 2, height / 2 - 35);
+
+        // Конкретная причина коллапса инфраструктуры
+        this.ctx.fillStyle = '#c9d1d9';
+        this.ctx.font = '13px sans-serif';
+        this.ctx.fillText(reason, width / 2, height / 2 + 5);
+        
+        this.ctx.fillStyle = '#8b949e';
+        this.ctx.font = 'italic 11px sans-serif';
+        this.ctx.fillText('Перезапустите страницу для повторной попытки', width / 2, height / 2 + 30);
+        this.ctx.restore();
     }
 
     /**
@@ -123,18 +167,15 @@ export class UIRenderer {
      */
     private drawPauseOverlay(width: number, height: number): void {
         this.ctx.save();
-        // Притемняем фон игрового поля
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
         this.ctx.fillRect(0, 0, width, height - 60);
 
-        // Рисуем стильную технологичную рамку
         this.ctx.fillStyle = 'rgba(22, 27, 34, 0.9)';
         this.ctx.fillRect(width / 2 - 160, height / 2 - 40, 320, 60);
         this.ctx.strokeStyle = '#d67422';
         this.ctx.lineWidth = 1.5;
         this.ctx.strokeRect(width / 2 - 160, height / 2 - 40, 320, 60);
 
-        // Выводим текст
         this.ctx.fillStyle = '#e38e44';
         this.ctx.font = 'bold 14px sans-serif';
         this.ctx.textAlign = 'center';
