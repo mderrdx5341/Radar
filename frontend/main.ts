@@ -1,10 +1,13 @@
-import { SimpleInvader, SimpleRadar, SimpleTurret } from '@/entities';
+import { SimpleInvader, SimpleRadar, SimpleTurret, RouteManager } from '@/entities';
 import { PlacementManager } from '@/entities/PlacementManager';
 import { CanvasRenderer } from '@/render/CanvasRenderer';
 
 const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
 const renderer = new CanvasRenderer('gameCanvas');
-const placement = new PlacementManager(); // Сетка 40x40
+const placement = new PlacementManager();
+
+// Инициализация глобального Менеджера Маршрутов роя
+const routeManager = new RouteManager();
 
 const radars: SimpleRadar[] = [
     new SimpleRadar(260, 260, 'РЛС-1')
@@ -17,19 +20,16 @@ const turrets: SimpleTurret[] = [
 let selectedEntity: SimpleRadar | SimpleTurret | null = null;
 let currentMouseX = 0;
 let currentMouseY = 0;
-
 let score = 0;
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 canvas.addEventListener('mousedown', (event: MouseEvent) => {
-        const rect = canvas.getBoundingClientRect();
+    const rect = canvas.getBoundingClientRect();
     const mouseX = event.clientX - rect.left;
     const mouseY = event.clientY - rect.top;
 
     if (event.button === 0) {
-        // --- ЛЕВАЯ КНОПКА МЫШИ ---
-        
         if (mouseY > 540) {
             if (mouseX >= 20 && mouseX <= 160) {
                 placement.startBuilding('RADAR');
@@ -41,11 +41,9 @@ canvas.addEventListener('mousedown', (event: MouseEvent) => {
             return;
         }
 
-        // Если включен режим СВОБОДНОГО СТРОИТЕЛЬСТВА
         if (placement.currentBuildType) {
-            // Проверяем дистанцию: нельзя строить здания вплотную друг к другу (радиус коллизии 20px)
-            const tooCloseRadar = radars.some(r => Math.sqrt((r.x - mouseX) ** 2 + (r.y - mouseY) ** 2) < 20);
-            const tooCloseTurret = turrets.some(t => Math.sqrt((t.x - mouseX) ** 2 + (t.y - mouseY) ** 2) < 20);
+            const tooCloseRadar = radars.some(r => Math.sqrt((r.x - mouseX) ** 2 + (r.y - mouseY) ** 2) < 12);
+            const tooCloseTurret = turrets.some(t => Math.sqrt((t.x - mouseX) ** 2 + (t.y - mouseY) ** 2) < 12);
 
             if (!tooCloseRadar && !tooCloseTurret) {
                 if (placement.currentBuildType === 'RADAR') {
@@ -69,9 +67,8 @@ canvas.addEventListener('mousedown', (event: MouseEvent) => {
             selectedEntity = null;
         }
     } else if (event.button === 2) {
-        // --- ПРАВАЯ КНОПКА МЫШИ (Действие или Отмена постройки) ---
         if (placement.currentBuildType) {
-            placement.cancelBuilding(); // ПКМ отменяет режим строительства
+            placement.cancelBuilding();
             return;
         }
 
@@ -96,19 +93,15 @@ canvas.addEventListener('mouseup', (event: MouseEvent) => {
     }
 });
 
-function getRandomX(): number {
-    // Враги спавнятся сверху, ограничиваем ширину, чтобы не пересекались с UI справа
-    return Math.floor(Math.random() * (750 - 50 + 1)) + 50;
-}
-
+// ИСПРАВЛЕНО: Генерируем рой ровно из 10 БПЛА, привязанных к 10 фиксированным точкам вылета
 const invaders: SimpleInvader[] = [];
-for (let i = 0; i < 10; i++) {
-    const startX = getRandomX();
-    // Рассредоточиваем врагов по высоте над экраном (от 0 до -400px),
-    // чтобы они не летели в одну линию, а появлялись волнами
-    const startY = Math.floor(Math.random() * -400); 
-    invaders.push(new SimpleInvader(startX, startY));
-}
+routeManager.spawnPoints.forEach(spawnX => {
+    // Враги выстраиваются на старте на разной высоте сверху (туман войны), но строго по своим X-коридорам
+    const invader = new SimpleInvader(spawnX, Math.floor(Math.random() * -300) - 50);
+    // Сразу на старте выдаем дрону его первоначальный чистый полетный план
+    invader.waypoints = routeManager.generateFlightPlan(invader.spawnPointX, invader.y);
+    invaders.push(invader);
+});
 
 let lastTime = performance.now();
 
@@ -116,16 +109,22 @@ function gameTick(timestamp: number) {
     const deltaTime = timestamp - lastTime;
     lastTime = timestamp;
 
-    // 1. Обновление состояния врагов
+    radars.forEach(radar => {
+        if (radar.isTrackingMouse) {
+            radar.setTargetDirection(currentMouseX, currentMouseY);
+        }
+        radar.rotate(deltaTime);
+        radar.scan(invaders);
+    });
+
     invaders.forEach(invader => {
         invader.updateVisibility(deltaTime);
         
-        // Безопасный мгновенный сброс на границах секторов
         if (invader.isVisible) {
             const seenByAnyRadar = radars.some(radar => radar.isInsideSector(invader));
             const seenByAnyTurret = turrets.some(turret => {
                 const dist = Math.sqrt((turret.x - invader.x) ** 2 + (turret.y - invader.y) ** 2);
-                return dist <= turret.visionRadius || dist <= turret.attackRange;
+                return dist <= turret.visionRadius || dist <= turret.attackRange; 
             });
 
             if (!seenByAnyRadar && !seenByAnyTurret) {
@@ -133,36 +132,44 @@ function gameTick(timestamp: number) {
             }
         }
         
-        // ПРОВЕРКА ГИБЕЛИ ИЛИ ПРОРЫВА
+        // Проверка прорыва или уничтожения
         if (invader.y > 540 || invader.hp <= 0) {
-            // НОВОЕ: Если враг погиб от лазеров турели, увеличиваем счёт очков
             if (invader.hp <= 0) {
                 score++;
+                
+                // РАДИОДОНЕСЕНИЕ 1: Дрон уничтожен — передаем ПВО в Менеджер Маршрутов роя
+                const killerTurret = turrets.find(t => t.currentTarget === invader);
+                if (killerTurret) {
+                    routeManager.reportHazard(killerTurret);
+                }
+            } else {
+                // РАДИОДОНЕСЕНИЕ 2: Дрон прорвался — рапортуем об успешном чистом коридоре
+                routeManager.reportSuccess(invader.spawnPointX);
             }
 
-            invader.y = 0;
-            invader.x = getRandomX();
+            // РЕСТАРТ ДРОНА: Он возрождается на своей родной точке вылета
+            invader.y = Math.floor(Math.random() * -100) - 20;
+            invader.x = invader.spawnPointX;
             invader.hp = 100;
             invader.visibilityTimer = 0;
+            invader.moveAngle = Math.PI / 2;
+            
+            // ИСПРАВЛЕНО: Летящие дроны не дергаются в воздухе! 
+            // Только новый, только что возрожденный дрон берет из менеджера свежую версию маршрута!
+            invader.waypoints = routeManager.generateFlightPlan(invader.spawnPointX, invader.y);
         } else {
-            invader.y += 1.5;
+            // Дрон просто летит по путям, которые у него уже заложены в памяти
+            invader.moveDown();
         }
     });
 
-    radars.forEach(radar => {
-        if (radar.isTrackingMouse) {
-            radar.setTargetDirection(currentMouseX, currentMouseY);
-        }
-        radar.rotate(deltaTime);
+    turrets.forEach(turret => {
+        turret.updateMovement(deltaTime);
+        turret.scan(invaders);
+        turret.attack(invaders, deltaTime);
     });
-
-    turrets.forEach(turret => turret.updateMovement(deltaTime));
     
-    radars.forEach(radar => radar.scan(invaders));
-    turrets.forEach(turret => turret.scan(invaders));
-    turrets.forEach(turret => turret.attack(invaders, deltaTime));
-    
-    // ОБНОВЛЕНО: Передаем счетчик score восьмым аргументом в рендерер
+    // Передаем список обнаруженных турелей из менеджера в рендерер для отрисовки коричневых кругов
     renderer.render(
         invaders, 
         radars, 
@@ -170,8 +177,9 @@ function gameTick(timestamp: number) {
         selectedEntity, 
         placement.currentBuildType, 
         currentMouseX, 
-        currentMouseY,
-        score
+        currentMouseY, 
+        score,
+        routeManager.getDiscoveredTurrets()
     );
 
     requestAnimationFrame(gameTick);

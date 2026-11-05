@@ -7,7 +7,7 @@ export class SimpleTurret {
     
     public visionRadius: number = 45;  
     public attackRange: number = 70;  
-    public damagePerFrame: number = 5; // Сделаем 1 для плавного теста угасания HP, либо верните 5
+    public damagePerFrame: number = 2; // Сделаем 1 для плавного теста угасания HP, либо верните 5
     public angleDir: number;           // Текущий физический угол ствола
     public fov: number;                
     public lockedTarget: SimpleInvader | null = null; 
