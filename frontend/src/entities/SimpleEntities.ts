@@ -2,12 +2,29 @@ export class SimpleInvader {
     public x: number;
     public y: number;
     public radius: number = 10;
-    public isVisible: boolean = false;
     public hp: number = 100;
+    
+    // Вместо boolean вводим таймер послесвечения в миллисекундах
+    public visibilityTimer: number = 0; 
 
     constructor(x: number, y: number) {
         this.x = x;
         this.y = y;
+    }
+
+    /**
+     * Враг считается видимым, пока таймер послесвечения больше нуля
+     */
+    public get isVisible(): boolean {
+        return this.visibilityTimer > 0;
+    }
+
+    /**
+     * Плавно уменьшает время видимости врага на величину deltaTime
+     */
+    public updateVisibility(deltaTime: number): void {
+        if (deltaTime <= 0) return;
+        this.visibilityTimer = Math.max(0, this.visibilityTimer - deltaTime);
     }
 }
 
@@ -15,32 +32,76 @@ export class SimpleRadar {
     public x: number;
     public y: number;
     public visionRadius: number = 180;
-    public angleDir: number;
-    public fov: number;
+    public angleDir: number;            
+    public fov: number;                 
+    public scanLineAngle: number;       
+    private rotationSpeed: number;      
+    private rotationDirection: number = 1;
 
-    constructor(x: number, y: number, angleDir: number = -Math.PI / 2, fovDegrees: number = 45) {
+    constructor(
+        x: number, 
+        y: number, 
+        angleDir: number = -Math.PI / 2, 
+        fovDegrees: number = 90, 
+        speed: number = 0.005           
+    ) {
         this.x = x;
         this.y = y;
-        this.angleDir = angleDir; 
+        this.angleDir = angleDir;
+        this.scanLineAngle = angleDir;  
         this.fov = fovDegrees * Math.PI / 180;
+        this.rotationSpeed = speed;
     }
 
-    // ИСПРАВЛЕНО: Добавлены квадратные скобки [] для массива
+    public rotate(deltaTime: number): void {
+        if (deltaTime <= 0) return;
+
+        this.scanLineAngle += this.rotationSpeed * deltaTime * this.rotationDirection;
+        let diff = this.scanLineAngle - this.angleDir;
+
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+
+        const halfFov = this.fov / 2;
+        if (Math.abs(diff) >= halfFov) {
+            this.rotationDirection *= -1;
+            this.scanLineAngle = this.angleDir + halfFov * Math.sign(diff);
+        }
+    }
+
     public scan(invaders: SimpleInvader[]): void {
         invaders.forEach(invader => {
             const dx = invader.x - this.x;
             const dy = invader.y - this.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
 
+            // 1. Проверяем дальность действия радара
             if (distance <= this.visionRadius) {
                 const angleToInvader = Math.atan2(dy, dx);
-                let angleDiff = angleToInvader - this.angleDir;
+                
+                // Проверяем, находится ли враг ВНУТРИ самого 90-градусного сектора
+                let sectorDiff = angleToInvader - this.angleDir;
+                while (sectorDiff < -Math.PI) sectorDiff += Math.PI * 2;
+                while (sectorDiff > Math.PI) sectorDiff -= Math.PI * 2;
 
-                while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-                while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                const halfFov = this.fov / 2;
 
-                if (Math.abs(angleDiff) <= this.fov / 2) {
-                    invader.isVisible = true;
+                if (Math.abs(sectorDiff) <= halfFov) {
+                    // --- ВРАГ ВНУТРИ СЕКТОРА ---
+                    // Проверяем разность углов между БЫСТРЫМ ЛУЧОМ развёртки и врагом
+                    let beamDiff = angleToInvader - this.scanLineAngle;
+                    while (beamDiff < -Math.PI) beamDiff += Math.PI * 2;
+                    while (beamDiff > Math.PI) beamDiff -= Math.PI * 2;
+
+                    const beamThickness = 0.08;
+                    if (Math.abs(beamDiff) <= beamThickness) {
+                        // Луч задел врага — включаем послесвечение
+                        invader.visibilityTimer = 1500; 
+                    }
+                } else {
+                    // --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: ВРАГ ВЫШЕЛ ЗА ГРАНИЦЫ СЕКТОРА УГЛА ---
+                    // Если враг внутри радиуса, но сместился по X за пределы 90 градусов — мгновенно гасим его
+                    invader.visibilityTimer = 0;
                 }
             }
         });
@@ -50,7 +111,6 @@ export class SimpleRadar {
 export class SimpleTurret {
     public x: number;
     public y: number;
-    
     public visionRadius: number = 90;  
     public attackRange: number = 160;  
     public damagePerFrame: number = 1;
@@ -72,9 +132,6 @@ export class SimpleTurret {
         return this.lockedTarget;
     }
 
-    /**
-     * Вспомогательный метод для проверки, попадает ли враг в текущий боевой конус атаки
-     */
     private isInsideAttackSector(invader: SimpleInvader): boolean {
         const dx = invader.x - this.x;
         const dy = invader.y - this.y;
@@ -91,10 +148,6 @@ export class SimpleTurret {
         return Math.abs(angleDiff) <= this.fov / 2;
     }
 
-    /**
-     * ШАГ 1: Пассивный обзор турели.
-     * Раскрывает туман войны ЕСЛИ враг в ближнем круге ИЛИ в длинном секторе обстрела
-     */
     public scan(invaders: SimpleInvader[]): void {
         invaders.forEach(invader => {
             if (invader.hp <= 0) return;
@@ -103,34 +156,31 @@ export class SimpleTurret {
             const dy = invader.y - this.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
 
-            // Условие 1: Враг в ближнем круге на 360 градусов
             if (distance <= this.visionRadius) {
-                invader.isVisible = true;
+                // Если враг вошёл в ближний круг — он подсвечивается постоянно (даём 100 мс на этот кадр)
+                invader.visibilityTimer = Math.max(invader.visibilityTimer, 100);
                 return;
             }
 
-            // Условие 2: Враг в длинном секторе обстрела (45 градусов)
             if (this.isInsideAttackSector(invader)) {
-                invader.isVisible = true;
+                // Если враг в секторе атаки — он также подсвечивается на этот кадр
+                invader.visibilityTimer = Math.max(invader.visibilityTimer, 100);
             }
         });
     }
 
-    /**
-     * ШАГ 2: Боевая логика — ведение огня строго по зафиксированной цели в секторе
-     */
     public attack(invaders: SimpleInvader[]): void {
-        // Проверяем старую зафиксированную цель
         if (this.lockedTarget) {
             const isAlive = this.lockedTarget.hp > 0;
-            const inSector = this.isInsideAttackSector(this.lockedTarget);
+            const dx = this.lockedTarget.x - this.x;
+            const dy = this.lockedTarget.y - this.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
             
-            if (!isAlive || !inSector) {
+            if (!isAlive || distance > this.attackRange) {
                 this.lockedTarget = null;
             }
         }
 
-        // Ищем цель для автонаведения (любой видимый враг на поле)
         let targetToTrack: SimpleInvader | null = this.lockedTarget;
 
         if (!targetToTrack) {
@@ -142,7 +192,6 @@ export class SimpleTurret {
             }
         }
 
-        // Поворачиваем ствол к видимой цели
         if (targetToTrack) {
             const dx = targetToTrack.x - this.x;
             const dy = targetToTrack.y - this.y;
@@ -151,14 +200,12 @@ export class SimpleTurret {
             this.angleDir = this.defaultAngle;
         }
 
-        // Фиксируем боевой замок лазера, если цель в секторе обстрела
         if (!this.lockedTarget && targetToTrack) {
             if (this.isInsideAttackSector(targetToTrack)) {
                 this.lockedTarget = targetToTrack;
             }
         }
 
-        // Наносим урон
         if (this.lockedTarget) {
             this.lockedTarget.hp -= this.damagePerFrame;
         }

@@ -52,37 +52,36 @@ export class CanvasRenderer {
         }
     }
 
-    private drawRadar(radar: SimpleRadar): void {
-        // Вычисляем стартовый и конечный угол сектора обзора
+private drawRadar(radar: SimpleRadar): void {
+        // 1. Рисуем стационарный сектор в 90 градусов (зону покрытия)
         const startAngle = radar.angleDir - radar.fov / 2;
         const endAngle = radar.angleDir + radar.fov / 2;
 
-        // Рисуем конус видимости (сектор в 45 градусов)
         this.ctx.beginPath();
-        this.ctx.moveTo(radar.x, radar.y); // Начинаем из центра радара
+        this.ctx.moveTo(radar.x, radar.y);
         this.ctx.arc(radar.x, radar.y, radar.visionRadius, startAngle, endAngle);
         this.ctx.closePath();
         
-        this.ctx.fillStyle = 'rgba(56, 139, 253, 0.08)';
+        this.ctx.fillStyle = 'rgba(56, 139, 253, 0.04)'; // Делаем фон сектора чуть мягче
         this.ctx.fill();
-        this.ctx.strokeStyle = 'rgba(56, 139, 253, 0.4)';
-        this.ctx.lineWidth = 1.5;
+        this.ctx.strokeStyle = 'rgba(56, 139, 253, 0.2)';
+        this.ctx.lineWidth = 1;
+        this.ctx.stroke();
+
+        // 2. Рисуем БЫСТРЫЙ СКАНИРУЮЩИЙ ЛУЧ (яркая синяя/голубая линия развёртки)
+        this.ctx.beginPath();
+        this.ctx.moveTo(radar.x, radar.y);
+        this.ctx.lineTo(
+            radar.x + Math.cos(radar.scanLineAngle) * radar.visionRadius,
+            radar.y + Math.sin(radar.scanLineAngle) * radar.visionRadius
+        );
+        this.ctx.strokeStyle = '#58a6ff'; // Яркий неоновый голубой цвет
+        this.ctx.lineWidth = 2;
         this.ctx.stroke();
 
         // Рисуем само здание радара (синий квадрат)
         this.ctx.fillStyle = '#58a6ff';
         this.ctx.fillRect(radar.x - 10, radar.y - 10, 20, 20);
-
-        // Рисуем небольшую стрелочку направления взгляда радара для наглядности
-        this.ctx.beginPath();
-        this.ctx.moveTo(radar.x, radar.y);
-        this.ctx.lineTo(
-            radar.x + Math.cos(radar.angleDir) * 15,
-            radar.y + Math.sin(radar.angleDir) * 15
-        );
-        this.ctx.strokeStyle = '#ffffff';
-        this.ctx.lineWidth = 2;
-        this.ctx.stroke();
     }
 
     private drawTurret(turret: SimpleTurret): void {

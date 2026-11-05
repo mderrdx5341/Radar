@@ -3,41 +3,62 @@ import { CanvasRenderer } from '@/render/CanvasRenderer';
 
 const renderer = new CanvasRenderer('gameCanvas');
 
-// Дальнобойный радар по центру, светящий широким сектором (90 градусов)
+// Создаем радар с углом качания 35 градусов влево-вправо от центра
 const radars: SimpleRadar[] = [
-    new SimpleRadar(400, 300, -Math.PI / 2, 90)
+    new SimpleRadar(400, 350, -Math.PI / 2, 90, 0.0025)
 ];
 
-// Турель стоит внизу экрана
 const turrets: SimpleTurret[] = [
-    new SimpleTurret(400, 450, -Math.PI / 2, 45)
+    new SimpleTurret(400, 420, -Math.PI / 2, 45)
 ];
 
-// Пускаем двух врагов по разным флангам
+function getRandomX(): number {
+    return Math.floor(Math.random() * (750 - 50 + 1)) + 50;
+}
+
 const invaders: SimpleInvader[] = [
-    new SimpleInvader(350, 0), // Летит по левому флангу
-    new SimpleInvader(500, 0),  // Летит по правому флангу
-    new SimpleInvader(400, 0)  // Летит по правому флангу
+    new SimpleInvader(300, 0), // Этот летит слева
+    new SimpleInvader(400, 0), // Этот летит по центру
+    new SimpleInvader(500, 0)  // Этот летит справа
 ];
 
-function gameTick() {
+let lastTime = performance.now();
+
+function gameTick(timestamp: number) {
+    const deltaTime = timestamp - lastTime;
+    lastTime = timestamp;
+
+    // 1. Обновление состояния врагов
     invaders.forEach(invader => {
-        invader.isVisible = false;
+        // ПЛАВНОЕ УГАСАНИЕ: уменьшаем таймер видимости на прошедшее deltaTime
+        invader.updateVisibility(deltaTime);
         
         if (invader.y > 600 || invader.hp <= 0) {
             invader.y = 0;
+            invader.x = getRandomX();
             invader.hp = 100;
+            invader.visibilityTimer = 0; // Сбрасываем видимость при возрождении
         } else {
-            invader.y += 1.5; // Медленная скорость для наглядности слежения
+            invader.y += 1.5;
         }
     });
 
+    // 2. Вращение луча РЛС
+    radars.forEach(radar => radar.rotate(deltaTime));
+
+    // 3. Сканирование и Бой
     radars.forEach(radar => radar.scan(invaders));
-    turrets.forEach(turret => turret.scan(invaders)); 
-    turrets.forEach(turret => turret.attack(invaders)); 
+    turrets.forEach(turret => turret.scan(invaders));
+    turrets.forEach(turret => turret.attack(invaders));
     
+    // 4. Отрисовка
     renderer.render(invaders, radars, turrets);
+
     requestAnimationFrame(gameTick);
 }
 
-gameTick();
+// Запускаем первый кадр, передавая стартовое время
+requestAnimationFrame((timestamp) => {
+    lastTime = timestamp;
+    gameTick(timestamp);
+});
