@@ -1,7 +1,7 @@
 export class SimpleInvader {
     public x: number;
     public y: number;
-    public radius: number = 10;
+    public radius: number = 6;
     public hp: number = 100;
     public visibilityTimer: number = 0; 
 

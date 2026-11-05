@@ -4,8 +4,8 @@ export class SimpleTurret {
     public x: number;
     public y: number;
     
-    public visionRadius: number = 90;  
-    public attackRange: number = 160;  
+    public visionRadius: number = 45;  
+    public attackRange: number = 90;  
     public damagePerFrame: number = 1;
     public angleDir: number;           
     public fov: number;                
