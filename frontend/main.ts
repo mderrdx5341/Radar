@@ -1,20 +1,65 @@
-import { SimpleInvader, SimpleRadar, SimpleTurret, RouteManager } from '@/entities';
+import { 
+    SimpleInvader, SimpleRadar, SimpleTurret, RouteManager,
+    PowerNode, RepairBay, ResourceHarvester, SimpleBuilding 
+} from '@/entities';
 import { PlacementManager } from '@/entities/PlacementManager';
 import { CanvasRenderer } from '@/render/CanvasRenderer';
 
 const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
 const renderer = new CanvasRenderer('gameCanvas');
 const placement = new PlacementManager();
-
-// Инициализация глобального Менеджера Маршрутов роя
 const routeManager = new RouteManager();
 
-const radars: SimpleRadar[] = [
-    new SimpleRadar(260, 260, 'РЛС-1')
-];
+// --- РАЗМЕРЫ СТРАТЕГИЧЕСКОЙ КАРТЫ (МИРОВЫЕ КООРДИНАТЫ) ---
+const WORLD_WIDTH = 1600;
+const WORLD_HEIGHT = 1200;
 
-const turrets: SimpleTurret[] = [
-    new SimpleTurret(260, 340, 'ПВО-1')
+// --- НАСТРОЙКИ ВИРТУАЛЬНОЙ КАМЕРЫ ---
+let cameraX = 160; 
+let cameraY = 480; 
+
+let isDragging = false;
+let startDragX = 0;
+let startDragY = 0;
+let startCamX = 0;
+let startCamY = 0;
+
+// --- СОСТОЯНИЕ ТАКТИЧЕСКОЙ ПАУЗЫ ---
+let isPaused = false; 
+
+// Отслеживание клавиш WASD
+const keys: { [key: string]: boolean } = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
+
+// Функция динамической подстройки под экран пользователя (Защита от мыла)
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    clampCamera();
+}
+window.addEventListener('resize', resizeCanvas);
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+function clampCamera() {
+    cameraX = Math.max(0, Math.min(WORLD_WIDTH - canvas.width, cameraX));
+    cameraY = Math.max(0, Math.min(WORLD_HEIGHT - (canvas.height - 60), cameraY));
+}
+
+// Первоначальное выставление камеры строго вниз тыла
+cameraX = (WORLD_WIDTH - canvas.width) / 2;
+cameraY = WORLD_HEIGHT - (canvas.height - 60);
+clampCamera();
+
+// Инициализация оборонительных рубежей
+const radars: SimpleRadar[] = [new SimpleRadar(800, 1000, 'РЛС-1')];
+const turrets: SimpleTurret[] = [new SimpleTurret(800, 1080, 'ПВО-1')];
+
+// ЖЕСТКИЙ ФИКС: Разворачиваем 3 физических здания в тылу на высоте Y: 1120
+const buildings: SimpleBuilding[] = [
+    new PowerNode(400, 1120, 'Энергоблок ⚡'),
+    new RepairBay(800, 1120, 'Ремонтный блок 🛠️'),
+    new ResourceHarvester(1200, 1120, 'Ресурсная шахта 💎')
 ];
 
 let selectedEntity: SimpleRadar | SimpleTurret | null = null;
@@ -24,95 +69,145 @@ let score = 0;
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
+window.addEventListener('keydown', (e) => {
+    const code = e.code; 
+    if (code in keys) keys[code] = true;
+    if (code === 'Space') isPaused = !isPaused;
+});
+
+window.addEventListener('keyup', (e) => {
+    const code = e.code;
+    if (code in keys) keys[code] = false;
+});
+
 canvas.addEventListener('mousedown', (event: MouseEvent) => {
     const rect = canvas.getBoundingClientRect();
-    const mouseX = event.clientX - rect.left;
-    const mouseY = event.clientY - rect.top;
+    const screenX = event.clientX - rect.left;
+    const screenY = event.clientY - rect.top;
+    const shopYThreshold = canvas.height - 60;
 
     if (event.button === 0) {
-        if (mouseY > 540) {
-            if (mouseX >= 20 && mouseX <= 160) {
-                placement.startBuilding('RADAR');
-                selectedEntity = null;
-            } else if (mouseX >= 180 && mouseX <= 320) {
-                placement.startBuilding('TURRET');
-                selectedEntity = null;
-            }
+        if (screenY > shopYThreshold) {
+            if (screenX >= 20 && screenX <= 160) placement.startBuilding('RADAR');
+            if (screenX >= 180 && screenX <= 320) placement.startBuilding('TURRET');
+            if (screenX >= 340 && screenX <= 480) isPaused = !isPaused;
             return;
         }
 
+        const worldX = screenX + cameraX;
+        const worldY = screenY + cameraY;
+
         if (placement.currentBuildType) {
-            const tooCloseRadar = radars.some(r => Math.sqrt((r.x - mouseX) ** 2 + (r.y - mouseY) ** 2) < 12);
-            const tooCloseTurret = turrets.some(t => Math.sqrt((t.x - mouseX) ** 2 + (t.y - mouseY) ** 2) < 12);
+            const tooCloseRadar = radars.some(r => Math.sqrt((r.x - worldX) ** 2 + (r.y - worldY) ** 2) < 12);
+            const tooCloseTurret = turrets.some(t => Math.sqrt((t.x - worldX) ** 2 + (t.y - worldY) ** 2) < 12);
 
             if (!tooCloseRadar && !tooCloseTurret) {
-                if (placement.currentBuildType === 'RADAR') {
-                    radars.push(new SimpleRadar(mouseX, mouseY, `РЛС-${radars.length + 1}`));
-                } else if (placement.currentBuildType === 'TURRET') {
-                    turrets.push(new SimpleTurret(mouseX, mouseY, `ПВО-${turrets.length + 1}`));
-                }
+                if (placement.currentBuildType === 'RADAR') radars.push(new SimpleRadar(worldX, worldY, `РЛС-${radars.length + 1}`));
+                if (placement.currentBuildType === 'TURRET') turrets.push(new SimpleTurret(worldX, worldY, `ПВО-${turrets.length + 1}`));
                 placement.cancelBuilding(); 
             }
             return;
         }
 
-        const clickedRadar = radars.find(r => Math.abs(r.x - mouseX) <= 15 && Math.abs(r.y - mouseY) <= 15);
-        const clickedTurret = turrets.find(t => Math.abs(t.x - mouseX) <= 15 && Math.abs(t.y - mouseY) <= 15);
+        const clickedRadar = radars.find(r => Math.abs(r.x - worldX) <= 15 && Math.abs(r.y - worldY) <= 15);
+        const clickedTurret = turrets.find(t => Math.abs(t.x - worldX) <= 15 && Math.abs(t.y - worldY) <= 15);
 
-        if (clickedRadar) {
-            selectedEntity = clickedRadar;
-        } else if (clickedTurret) {
-            selectedEntity = clickedTurret;
-        } else {
-            selectedEntity = null;
-        }
+        selectedEntity = clickedRadar || clickedTurret || null;
+
+    } else if (event.button === 1) {
+        isDragging = true;
+        startDragX = screenX;
+        startDragY = screenY;
+        startCamX = cameraX;
+        startCamY = cameraY;
+        event.preventDefault();
+
     } else if (event.button === 2) {
         if (placement.currentBuildType) {
             placement.cancelBuilding();
             return;
         }
+        const worldX = screenX + cameraX;
+        const worldY = screenY + cameraY;
 
-        if (selectedEntity instanceof SimpleTurret) {
-            selectedEntity.moveTo(mouseX, mouseY);
-        } else if (selectedEntity instanceof SimpleRadar) {
+        if (selectedEntity instanceof SimpleTurret) selectedEntity.moveTo(worldX, worldY);
+        if (selectedEntity instanceof SimpleRadar) {
             selectedEntity.startTracking();
-            selectedEntity.setTargetDirection(mouseX, mouseY);
+            selectedEntity.setTargetDirection(worldX, worldY);
         }
     }
 });
 
 canvas.addEventListener('mousemove', (event: MouseEvent) => {
     const rect = canvas.getBoundingClientRect();
-    currentMouseX = event.clientX - rect.left;
-    currentMouseY = event.clientY - rect.top;
-});
+    const screenX = event.clientX - rect.left;
+    const screenY = event.clientY - rect.top;
 
-canvas.addEventListener('mouseup', (event: MouseEvent) => {
-    if (event.button === 2 && selectedEntity instanceof SimpleRadar) {
-        selectedEntity.stopTracking();
+    currentMouseX = screenX;
+    currentMouseY = screenY;
+
+    if (isDragging) {
+        const dx = screenX - startDragX;
+        const dy = screenY - startDragY;
+        cameraX = startCamX - dx;
+        cameraY = startCamY - dy;
+        clampCamera();
     }
 });
 
-// ИСПРАВЛЕНО: Генерируем рой ровно из 10 БПЛА, привязанных к 10 фиксированным точкам вылета
+canvas.addEventListener('mouseup', (event: MouseEvent) => {
+    if (event.button === 1) isDragging = false; 
+    if (event.button === 2 && selectedEntity instanceof SimpleRadar) selectedEntity.stopTracking();
+});
+
 const invaders: SimpleInvader[] = [];
 routeManager.spawnPoints.forEach(spawnX => {
-    // Враги выстраиваются на старте на разной высоте сверху (туман войны), но строго по своим X-коридорам
     const invader = new SimpleInvader(spawnX, Math.floor(Math.random() * -300) - 50);
-    // Сразу на старте выдаем дрону его первоначальный чистый полетный план
     invader.waypoints = routeManager.generateFlightPlan(invader.spawnPointX, invader.y);
     invaders.push(invader);
 });
 
 let lastTime = performance.now();
 
+// Создаем фиктивный экономический контекст для передачи в здания
+const econContext = {
+    addGold: (amount: number) => {
+        console.log(`[Экономика]: Добыто золота: +${amount} (Шахта функционирует)`);
+    }
+};
+
 function gameTick(timestamp: number) {
     const deltaTime = timestamp - lastTime;
     lastTime = timestamp;
 
+    const camSpeed = 7;
+    if (keys.KeyW) cameraY -= camSpeed;
+    if (keys.KeyS) cameraY += camSpeed;
+    if (keys.KeyA) cameraX -= camSpeed;
+    if (keys.KeyD) cameraX += camSpeed;
+    clampCamera();
+
+    if (isPaused) {
+        radars.forEach(radar => {
+            if (radar.isTrackingMouse) radar.setTargetDirection(currentMouseX + cameraX, currentMouseY + cameraY);
+        });
+
+        renderer.render(
+            invaders, radars, turrets, selectedEntity, 
+            placement.currentBuildType, currentMouseX + cameraX, currentMouseY + cameraY, score,
+            routeManager.getDiscoveredTurrets(), cameraX, cameraY, isPaused, buildings
+        );
+        requestAnimationFrame(gameTick);
+        return;
+    }
+
+    // Обновление пассивных систем зданий (генерация ресурсов и т.д.)
+    buildings.forEach(building => {
+        building.update(deltaTime, econContext);
+    });
+
     radars.forEach(radar => {
-        if (radar.isTrackingMouse) {
-            radar.setTargetDirection(currentMouseX, currentMouseY);
-        }
+        if (radar.isTrackingMouse) radar.setTargetDirection(currentMouseX + cameraX, currentMouseY + cameraY);
         radar.rotate(deltaTime);
         radar.scan(invaders);
     });
@@ -120,45 +215,21 @@ function gameTick(timestamp: number) {
     invaders.forEach(invader => {
         invader.updateVisibility(deltaTime);
         
-        if (invader.isVisible) {
-            const seenByAnyRadar = radars.some(radar => radar.isInsideSector(invader));
-            const seenByAnyTurret = turrets.some(turret => {
-                const dist = Math.sqrt((turret.x - invader.x) ** 2 + (turret.y - invader.y) ** 2);
-                return dist <= turret.visionRadius || dist <= turret.attackRange; 
-            });
-
-            if (!seenByAnyRadar && !seenByAnyTurret) {
-                invader.visibilityTimer = 0;
-            }
-        }
-        
-        // Проверка прорыва или уничтожения
-        if (invader.y > 540 || invader.hp <= 0) {
+        if (invader.y > 1200 || invader.hp <= 0) {
             if (invader.hp <= 0) {
                 score++;
-                
-                // РАДИОДОНЕСЕНИЕ 1: Дрон уничтожен — передаем ПВО в Менеджер Маршрутов роя
                 const killerTurret = turrets.find(t => t.currentTarget === invader);
-                if (killerTurret) {
-                    routeManager.reportHazard(killerTurret);
-                }
-            } else {
-                // РАДИОДОНЕСЕНИЕ 2: Дрон прорвался — рапортуем об успешном чистом коридоре
-                routeManager.reportSuccess(invader.spawnPointX);
+                if (killerTurret) routeManager.reportHazard(killerTurret);
             }
 
-            // РЕСТАРТ ДРОНА: Он возрождается на своей родной точке вылета
             invader.y = Math.floor(Math.random() * -100) - 20;
             invader.x = invader.spawnPointX;
             invader.hp = 100;
             invader.visibilityTimer = 0;
             invader.moveAngle = Math.PI / 2;
             
-            // ИСПРАВЛЕНО: Летящие дроны не дергаются в воздухе! 
-            // Только новый, только что возрожденный дрон берет из менеджера свежую версию маршрута!
             invader.waypoints = routeManager.generateFlightPlan(invader.spawnPointX, invader.y);
         } else {
-            // Дрон просто летит по путям, которые у него уже заложены в памяти
             invader.moveDown();
         }
     });
@@ -169,17 +240,11 @@ function gameTick(timestamp: number) {
         turret.attack(invaders, deltaTime);
     });
     
-    // Передаем список обнаруженных турелей из менеджера в рендерер для отрисовки коричневых кругов
+    // Передаем массив зданий одиннадцатым аргументом в рендерер
     renderer.render(
-        invaders, 
-        radars, 
-        turrets, 
-        selectedEntity, 
-        placement.currentBuildType, 
-        currentMouseX, 
-        currentMouseY, 
-        score,
-        routeManager.getDiscoveredTurrets()
+        invaders, radars, turrets, selectedEntity, 
+        placement.currentBuildType, currentMouseX + cameraX, currentMouseY + cameraY, score,
+        routeManager.getDiscoveredTurrets(), cameraX, cameraY, isPaused, buildings
     );
 
     requestAnimationFrame(gameTick);

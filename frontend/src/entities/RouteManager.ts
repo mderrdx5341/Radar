@@ -8,7 +8,7 @@ export interface Waypoint {
 
 export class RouteManager {
     // ЖЁСТКИЙ ФИКС: 10 тактических коридоров взлёта по оси X зафиксированы цифрами
-    public readonly spawnPoints: number[] = [60, 130, 200, 270, 340, 410, 480, 550, 620, 690];
+    public readonly spawnPoints: number[] = [80, 240, 400, 560, 720, 880, 1040, 1200, 1360, 1520];
     
     // Глобальный реестр турелей ПВО, о которых рой уже знает
     private discoveredTurrets: SimpleTurret[] = [];

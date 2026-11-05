@@ -1,4 +1,4 @@
-import { SimpleInvader, SimpleRadar, SimpleTurret } from '../entities';
+import { SimpleInvader, SimpleRadar, SimpleTurret, SimpleBuilding } from '../entities';
 import { EnvironmentRenderer } from './EnvironmentRenderer';
 import { EntityRenderer } from './EntityRenderer';
 import { UIRenderer } from './UIRenderer';
@@ -7,21 +7,15 @@ export class CanvasRenderer {
     private canvas: HTMLCanvasElement;
     private ctx: CanvasRenderingContext2D;
     
-    // Три изолированных рендерера для компонентных слоев сцены
     private environmentRenderer: EnvironmentRenderer;
     private entityRenderer: EntityRenderer;
     private uiRenderer: UIRenderer;
 
     constructor(canvasId: string) {
         this.canvas = document.getElementById(canvasId) as HTMLCanvasElement;
-        const context = this.canvas.getContext('2d');
+        this.ctx = this.canvas.getContext('2d')!;
+        this.ctx.imageSmoothingEnabled = false;
         
-        if (!context) {
-            throw new Error('Не удалось получить 2D контекст для Canvas');
-        }
-        this.ctx = context;
-        
-        // Передаем общий графический контекст во все подсистемы
         this.environmentRenderer = new EnvironmentRenderer(this.ctx);
         this.entityRenderer = new EntityRenderer(this.ctx);
         this.uiRenderer = new UIRenderer(this.ctx);
@@ -33,20 +27,28 @@ export class CanvasRenderer {
         turrets: SimpleTurret[],
         selectedEntity: SimpleRadar | SimpleTurret | null,
         buildType: string | null,
-        ghostX: number,
-        ghostY: number,
+        ghostX: number, 
+        ghostY: number, 
         score: number,
-        discoveredTurrets: SimpleTurret[]
+        discoveredTurrets: SimpleTurret[],
+        cameraX: number,
+        cameraY: number,
+        isPaused: boolean,
+        buildings: SimpleBuilding[] // ПРИНЯТО: Список объектов инфраструктуры
     ): void {
-        const width = this.canvas.width;
-        const height = this.canvas.height;
+        const scrWidth = this.canvas.width;
+        const scrHeight = this.canvas.height;
 
-        // СЛОЙ 1: Статическое окружение и тактическая сетка
-        this.environmentRenderer.clearScreen(width, height);
-        this.environmentRenderer.drawGrid(width, height);
-        this.environmentRenderer.drawBasePerimeter(width);
+        this.environmentRenderer.clearScreen(scrWidth, scrHeight);
+
+        // --- СДВИГ В ПРОСТРАНСТВО КАРТЫ ---
+        this.ctx.save();
+        this.ctx.translate(-cameraX, -cameraY);
+
+        this.environmentRenderer.drawGrid(1600, 1200);
+        this.environmentRenderer.drawBasePerimeter(1600);
         
-        // СЛОЙ 2: Боевые и разведывательные юниты на карте
+        // Отрисовка оборонительных юнитов
         radars.forEach(radar => {
             this.entityRenderer.drawRadar(radar);
             if (selectedEntity === radar) this.uiRenderer.drawSelectionFrame(radar.x, radar.y);
@@ -57,19 +59,26 @@ export class CanvasRenderer {
             if (selectedEntity === turret) this.uiRenderer.drawSelectionFrame(turret.x, turret.y);
         });
 
+        // ДЕЛЕГИРОВАНИЕ: Отрисовка физических корпусов зданий на карте
+        buildings.forEach(building => {
+            this.entityRenderer.drawBuilding(building);
+        });
+
         invaders.forEach(invader => {
             this.entityRenderer.drawInvader(invader);
         });
 
-        // С СЛОЙ 3: Пользовательский интерфейс и HUD
         if (buildType) {
             this.uiRenderer.drawGhostBuilding(buildType, ghostX, ghostY);
         }
 
-        this.uiRenderer.drawShopUI(width);
+        this.ctx.restore();
+
+        // --- СТАТИЧНЫЙ HUD-ИНТЕРФЕЙС ЭКРАНА ---
+        this.uiRenderer.drawShopUI(scrWidth, scrHeight, isPaused);
 
         if (selectedEntity) {
-            this.uiRenderer.drawSelectedNameUI(width, selectedEntity.name);
+            this.uiRenderer.drawSelectedNameUI(scrWidth, selectedEntity.name);
         }
 
         this.uiRenderer.drawScoreUI(score);

@@ -5,34 +5,31 @@ export class EnvironmentRenderer {
         this.ctx = ctx;
     }
 
-    /**
-     * Полная очистка игрового экрана перед отрисовкой нового кадра
-     */
     public clearScreen(width: number, height: number): void {
         this.ctx.clearRect(0, 0, width, height);
     }
 
     /**
-     * Отрисовка фоновой тактической координатной сетки (строго до рубежа Y: 540)
+     * Отрисовка фоновой тактической сетки на всю площадь большой карты 1600x1200
      */
-    public drawGrid(width: number, height: number, gridSize: number = 40): void {
+    public drawGrid(mapWidth: number, mapHeight: number, gridSize: number = 40): void {
         this.ctx.save();
-        this.ctx.strokeStyle = '#21262d'; // Тёмно-серый цвет сетки в стиле радара
+        this.ctx.strokeStyle = '#1b2028'; // Глубокий радарный оттенок
         this.ctx.lineWidth = 1;
 
         // Вертикальные линии
-        for (let x = 0; x < width; x += gridSize) {
+        for (let x = 0; x <= mapWidth; x += gridSize) {
             this.ctx.beginPath();
             this.ctx.moveTo(x, 0);
-            this.ctx.lineTo(x, height - 60); // Не заходим на нижнюю панель магазина
+            this.ctx.lineTo(x, mapHeight); 
             this.ctx.stroke();
         }
 
         // Горизонтальные линии
-        for (let y = 0; y <= 540; y += gridSize) {
+        for (let y = 0; y <= mapHeight; y += gridSize) {
             this.ctx.beginPath();
             this.ctx.moveTo(0, y);
-            this.ctx.lineTo(width, y);
+            this.ctx.lineTo(mapWidth, y);
             this.ctx.stroke();
         }
 
@@ -40,16 +37,16 @@ export class EnvironmentRenderer {
     }
 
     /**
-     * Визуализация охраняемого рубежа базы (линия на Y: 540)
+     * Охраняемый рубеж базы натянут в самом низу большой карты на Y: 1200
      */
-    public drawBasePerimeter(width: number): void {
+    public drawBasePerimeter(mapWidth: number): void {
         this.ctx.save();
-        this.ctx.strokeStyle = 'rgba(240, 246, 252, 0.2)'; // Белая полупрозрачная линия рубежа
-        this.ctx.lineWidth = 2;
+        this.ctx.strokeStyle = 'rgba(255, 51, 51, 0.25)'; // Красный рубеж тревоги
+        this.ctx.lineWidth = 3;
         
         this.ctx.beginPath();
-        this.ctx.moveTo(0, 540);
-        this.ctx.lineTo(width, 540);
+        this.ctx.moveTo(0, 1200);
+        this.ctx.lineTo(mapWidth, 1200);
         this.ctx.stroke();
         
         this.ctx.restore();
