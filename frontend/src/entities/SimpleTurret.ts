@@ -134,14 +134,14 @@ export class SimpleTurret {
             }
         }
 
-        // 3. Автонаведение ствола
+        // 3. АВТОНАВЕДЕНИЕ СТВОЛА: Изменяем угол только если есть цель для слежения
         if (targetToTrack) {
             const dx = targetToTrack.x - this.x;
             const dy = targetToTrack.y - this.y;
             this.angleDir = Math.atan2(dy, dx);
-        } else {
-            this.angleDir = this.defaultAngle;
-        }
+        } 
+        // ИСПРАВЛЕНО: Блок else, сбрасывающий angleDir в defaultAngle, ПОЛНОСТЬЮ УДАЛЕН.
+        // Если целей нет, турель сохраняет свое последнее вычисленное значение angleDir.
 
         // 4. Фиксируем боевой замок лазера
         if (!this.lockedTarget && targetToTrack) {
@@ -150,9 +150,9 @@ export class SimpleTurret {
             }
         }
 
-        // 5. НАНЕСЕНИЕ УРОНА (ИСПРАВЛЕНО: используем динамическое свойство класса)
+        // 5. Нанесение урона
         if (this.lockedTarget) {
-            this.lockedTarget.hp -= this.damagePerFrame; 
+            this.lockedTarget.hp -= this.damagePerFrame;
         }
     }
 }
