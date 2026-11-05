@@ -1,41 +1,43 @@
-//import './styles/App.scss';
-import App from './src/App';
+import { SimpleInvader, SimpleRadar, SimpleTurret } from '@/entities/SimpleEntities';
+import { CanvasRenderer } from '@/render/CanvasRenderer';
 
-(function(){
+const renderer = new CanvasRenderer('gameCanvas');
 
-	let app = new App();
-	app.run();
-})();
+// Дальнобойный радар по центру, светящий широким сектором (90 градусов)
+const radars: SimpleRadar[] = [
+    new SimpleRadar(400, 300, -Math.PI / 2, 90)
+];
 
-import { Player } from './src/GameLoop/Player';
-import { GameLoop } from './src/GameLoop/GameLoop';
+// Турель стоит внизу экрана
+const turrets: SimpleTurret[] = [
+    new SimpleTurret(400, 450, -Math.PI / 2, 45)
+];
 
-// 1. Создаем игрока и наносим ему немного урона, чтобы проверить регенерацию
-const player = new Player('Mderrdx', 100);
-player.changeHp(15); // Опускаем здоровье до 85 HP
+// Пускаем двух врагов по разным флангам
+const invaders: SimpleInvader[] = [
+    new SimpleInvader(350, 0), // Летит по левому флангу
+    new SimpleInvader(500, 0),  // Летит по правому флангу
+    new SimpleInvader(400, 0)  // Летит по правому флангу
+];
 
-// 2. Находим элементы на реальной странице
-const nameEl = document.getElementById('player-name');
-const hpEl = document.getElementById('player-hp');
-const maxHpEl = document.getElementById('player-max-hp');
+function gameTick() {
+    invaders.forEach(invader => {
+        invader.isVisible = false;
+        
+        if (invader.y > 600 || invader.hp <= 0) {
+            invader.y = 0;
+            invader.hp = 100;
+        } else {
+            invader.y += 1.5; // Медленная скорость для наглядности слежения
+        }
+    });
 
-if (nameEl && hpEl && maxHpEl) {
-    // Отрисовываем стартовое состояние
-    nameEl.textContent = player.getName();
-    hpEl.textContent = player.getHp().toString();
-    maxHpEl.textContent = player.getMaxHp().toString();
-
-    // 3. Создаем игровой цикл
-    const gameLoop = new GameLoop(player);
-
-    // 4. Чтобы экран обновлялся на каждый тик, расширим метод update
-    const originalUpdate = gameLoop.update;
-    gameLoop.update = function(deltaTime: number) {
-        originalUpdate.call(this, deltaTime);
-        // Обновляем циферку здоровья на экране
-        hpEl.textContent = player.getHp().toString();
-    };
-
-    // Запускаем цикл!
-    gameLoop.start();
+    radars.forEach(radar => radar.scan(invaders));
+    turrets.forEach(turret => turret.scan(invaders)); 
+    turrets.forEach(turret => turret.attack(invaders)); 
+    
+    renderer.render(invaders, radars, turrets);
+    requestAnimationFrame(gameTick);
 }
+
+gameTick();
