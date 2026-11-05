@@ -1,4 +1,4 @@
-import { SimpleInvader, SimpleRadar, SimpleTurret } from '@/entities/SimpleEntities';
+import { SimpleInvader, SimpleRadar, SimpleTurret } from '@/entities/';
 import { CanvasRenderer } from '@/render/CanvasRenderer';
 
 const renderer = new CanvasRenderer('gameCanvas');

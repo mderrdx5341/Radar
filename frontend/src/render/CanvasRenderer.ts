@@ -1,4 +1,4 @@
-import { SimpleInvader, SimpleRadar, SimpleTurret } from '../entities/SimpleEntities';
+import { SimpleInvader, SimpleRadar, SimpleTurret } from '@/entities/';
 
 export class CanvasRenderer {
     private canvas: HTMLCanvasElement;
