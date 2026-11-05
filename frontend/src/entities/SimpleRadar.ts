@@ -83,32 +83,43 @@ export class SimpleRadar {
             this.scanLineAngle = this.angleDir + halfFov * Math.sign(diff);
         }
     }
+    /**
+     * Проверяет, находится ли враг внутри физических границ 90-градусного сектора радара
+     */
+    public isInsideSector(invader: SimpleInvader): boolean {
+        const dx = invader.x - this.x;
+        const dy = invader.y - this.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        // Если дальше радиуса обзора — он точно не в секторе
+        if (distance > this.visionRadius) return false;
+
+        const angleToInvader = Math.atan2(dy, dx);
+        let sectorDiff = angleToInvader - this.angleDir;
+        
+        while (sectorDiff < -Math.PI) sectorDiff += Math.PI * 2;
+        while (sectorDiff > Math.PI) sectorDiff -= Math.PI * 2;
+
+        return Math.abs(sectorDiff) <= this.fov / 2;
+    }
 
     public scan(invaders: SimpleInvader[]): void {
         invaders.forEach(invader => {
-            const dx = invader.x - this.x;
-            const dy = invader.y - this.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
+            if (invader.hp <= 0) return;
 
-            if (distance <= this.visionRadius) {
+            // Используем наш новый метод для проверки зоны
+            if (this.isInsideSector(invader)) {
+                const dx = invader.x - this.x;
+                const dy = invader.y - this.y;
                 const angleToInvader = Math.atan2(dy, dx);
-                let sectorDiff = angleToInvader - this.angleDir;
-                while (sectorDiff < -Math.PI) sectorDiff += Math.PI * 2;
-                while (sectorDiff > Math.PI) sectorDiff -= Math.PI * 2;
 
-                const halfFov = this.fov / 2;
+                let beamDiff = angleToInvader - this.scanLineAngle;
+                while (beamDiff < -Math.PI) beamDiff += Math.PI * 2;
+                while (beamDiff > Math.PI) beamDiff -= Math.PI * 2;
 
-                if (Math.abs(sectorDiff) <= halfFov) {
-                    let beamDiff = angleToInvader - this.scanLineAngle;
-                    while (beamDiff < -Math.PI) beamDiff += Math.PI * 2;
-                    while (beamDiff > Math.PI) beamDiff -= Math.PI * 2;
-
-                    const beamThickness = 0.08;
-                    if (Math.abs(beamDiff) <= beamThickness) {
-                        invader.visibilityTimer = 1500; 
-                    }
-                } else {
-                    invader.visibilityTimer = 0;
+                const beamThickness = 0.08;
+                if (Math.abs(beamDiff) <= beamThickness) {
+                    invader.visibilityTimer = 1500; 
                 }
             }
         });

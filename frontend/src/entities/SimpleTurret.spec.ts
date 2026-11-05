@@ -35,16 +35,22 @@ describe('Юнит-тестирование боевой турели (SimpleTur
         expect(farSideInvader.isVisible).to.be.false;
     });
 
-    it('должен разворачивать сектор атаки в сторону видимого врага и фиксировать его', () => {
-        const turret = new SimpleTurret(100, 100, 'Турель-Тест', -Math.PI / 2, 45); // attackRange = 70
-        const sideInvader = new SimpleInvader(150, 100); // Дистанция 50 пикселей СПРАВА (внутри 70)
+    it('должен ПЛАВНО разворачивать сектор атаки в сторону видимого врага по времени', () => {
+        const turret = new SimpleTurret(100, 100, 'Turret-Test', -Math.PI / 2, 45); // Смотрит вверх (-1.57)
+        const sideInvader = new SimpleInvader(150, 100); // Дистанция 50 пикселей СПРАВА (угол 0)
         sideInvader.visibilityTimer = 1000;
 
-        turret.attack([sideInvader]);
+        // Тик 1: Прошло 100 миллисекунд. Расчетный поворот: 100 * 0.003 = 0.3 радиана
+        // Угол стремится к 0 от -1.57. Получаем: -1.57 + 0.3 = -1.27
+        turret.attack([sideInvader], 100);
+        expect(turret.angleDir).to.be.closeTo(-1.27, 0.01);
+        expect(turret.lockedTarget).to.be.null; // Еще не стреляет, ствол не довернулся!
 
-        expect(turret.angleDir).to.equal(0); // Развернулся вправо
-        expect(turret.lockedTarget).to.equal(sideInvader);
-        expect(sideInvader.hp).to.equal(95); // Урон равен 5 (100 - 5 = 95)
+        // Тик 2: Прошло еще 500 миллисекунд. Времени с запасом хватит, чтобы довернуть ствол до 0
+        turret.attack([sideInvader], 500);
+        expect(turret.angleDir).to.equal(0); // Ствол наведен идеально!
+        expect(turret.lockedTarget).to.equal(sideInvader); // Боевой замок сработал
+        expect(sideInvader.hp).to.equal(99); // Нанесен урон
     });
 
     it('должен сбрасывать фиксацию цели, если враг улетел за пределы максимального радиуса', () => {
@@ -52,33 +58,32 @@ describe('Юнит-тестирование боевой турели (SimpleTur
         const invader = new SimpleInvader(100, 140); // Дистанция 40 (внутри 70)
         invader.visibilityTimer = 1000;
 
-        turret.attack([invader]);
+        // Даем 1000 мс, чтобы ствол успел навестись и зафиксировать цель
+        turret.attack([invader], 1000);
         expect(turret.lockedTarget).to.equal(invader);
 
         invader.visibilityTimer = 0; // Скрылся в тумане
         invader.y = 200;             // Дистанция 100 > attackRange 70
-        turret.attack([invader]);
+        turret.attack([invader], 16);
 
         expect(turret.lockedTarget).to.be.null; // Боевой замок снят
     });
 
     it('должен сохранять последнее направление ствола (замирать), если на поле исчезли видимые цели', () => {
-        const turret = new SimpleTurret(100, 100, 'Турель-Тест', -Math.PI / 2); // Изначально вверх
-        const sideInvader = new SimpleInvader(200, 100); // Строго справа (угол 0 градусов)
+        const turret = new SimpleTurret(100, 100, 'Турель-Тест', -Math.PI / 2);
+        const sideInvader = new SimpleInvader(150, 100); // Справа
         sideInvader.visibilityTimer = 1000;
 
-        // Поворачиваем турель вправо к видимой цели
-        turret.attack([sideInvader]);
+        // Поворачиваем и доводим ствол (даем 1000 мс)
+        turret.attack([sideInvader], 1000);
         expect(turret.angleDir).to.equal(0);
 
-        // Симулируем, что цель мгновенно исчезла с поля
+        // Цель исчезла
         sideInvader.visibilityTimer = 0;
 
-        // Производим еще один тик атаки при отсутствии видимых целей
-        turret.attack([sideInvader]);
-
-        // Ствол НЕ возвращается наверх (-Math.PI / 2), а остается смотреть вправо (0)
-        expect(turret.angleDir).to.equal(0);
+        // Очередной тик времени
+        turret.attack([sideInvader], 16);
+        expect(turret.angleDir).to.equal(0); // Замерла на месте!
     });
 
     it('должен наносить измененный урон врагу, если свойство damagePerFrame было переписано', () => {
@@ -88,8 +93,18 @@ describe('Юнит-тестирование боевой турели (SimpleTur
 
         turret.damagePerFrame = 20; // Прокачиваем урон до 20
 
-        turret.attack([invader]);
+        // Даем 1000 мс на наведение и выстрел
+        turret.attack([invader], 1000);
         expect(invader.hp).to.equal(80); // 100 - 20 = 80
+    });
+
+    it('должен игнорировать изменение угла, если дельта времени в атаке равна нулю', () => {
+        const turret = new SimpleTurret(100, 100, 'Тест', -Math.PI / 2);
+        const sideInvader = new SimpleInvader(150, 100);
+        sideInvader.visibilityTimer = 1000;
+
+        turret.attack([sideInvader], 0);
+        expect(turret.angleDir).to.equal(-Math.PI / 2); // Не сдвинулся
     });
 
     it('должен правильно изменять целевые координаты при вызове moveTo', () => {
@@ -111,7 +126,7 @@ describe('Юнит-тестирование боевой турели (SimpleTur
         expect(turret.y).to.equal(100);
     });
 
-    it('должен мгновенно фиксировать турель в конечной точке, если шаг превышает оставшееся расстояние', () => {
+    it('должен мгновенно фиксировать турель в конечной точке, если шаг превышает оставщееся расстояние', () => {
         const turret = new SimpleTurret(100, 100, 'Тест-ПВО');
         turret.moveTo(105, 100); // Отрезок всего 5 пикселей
 

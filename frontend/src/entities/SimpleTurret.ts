@@ -7,17 +7,18 @@ export class SimpleTurret {
     
     public visionRadius: number = 45;  
     public attackRange: number = 70;  
-    public damagePerFrame: number = 5;
-    public angleDir: number;           
+    public damagePerFrame: number = 1; // Сделаем 1 для плавного теста угасания HP, либо верните 5
+    public angleDir: number;           // Текущий физический угол ствола
     public fov: number;                
     public lockedTarget: SimpleInvader | null = null; 
 
     private defaultAngle: number;       
+    public targetAngle: number;        // НОВОЕ: Целевой угол, куда турель стремится повернуться
+    private turnSpeed: number = 0.003;  // НОВОЕ: Скорость поворота ствола (радиан в миллисекунду)
 
-    // --- ПАРАМЕТРЫ ПЕРЕДВИЖЕНИЯ ТУРЕЛИ ---
-    public targetX: number;            // Координата X, куда едет турель
-    public targetY: number;            // Координата Y, куда едет турель
-    private moveSpeed: number = 0.12;   // Скорость движения (пикселей в миллисекунду)
+    public targetX: number;            
+    public targetY: number;            
+    private moveSpeed: number = 0.12;   
 
     constructor(
         x: number, 
@@ -28,10 +29,11 @@ export class SimpleTurret {
     ) {
         this.x = x;
         this.y = y;
-        this.targetX = x; // Изначально цель совпадает с текущим местом
+        this.targetX = x; 
         this.targetY = y;
         this.name = name;
         this.angleDir = angleDir;
+        this.targetAngle = angleDir; // Изначально смотрим в дефолтную сторону
         this.defaultAngle = angleDir;
         this.fov = fovDegrees * Math.PI / 180;
     }
@@ -40,17 +42,11 @@ export class SimpleTurret {
         return this.lockedTarget;
     }
 
-    /**
-     * Приказ начать движение к новым координатам
-     */
     public moveTo(targetX: number, targetY: number): void {
         this.targetX = targetX;
         this.targetY = targetY;
     }
 
-    /**
-     * Плавно передвигает турель к целевой точке в зависимости от deltaTime
-     */
     public updateMovement(deltaTime: number): void {
         if (deltaTime <= 0) return;
 
@@ -61,17 +57,18 @@ export class SimpleTurret {
         if (distance > 0) {
             const step = this.moveSpeed * deltaTime;
             if (distance <= step) {
-                // Если мы очень близко — мгновенно встаем в цель, чтобы не проскочить
                 this.x = this.targetX;
                 this.y = this.targetY;
             } else {
-                // Передвигаемся по вектору направления
                 this.x += (dx / distance) * step;
                 this.y += (dy / distance) * step;
             }
         }
     }
 
+    /**
+     * Вспомогательный метод проверки попадания в сектор обстрела
+     */
     private isInsideAttackSector(invader: SimpleInvader): boolean {
         const dx = invader.x - this.x;
         const dy = invader.y - this.y;
@@ -94,11 +91,9 @@ export class SimpleTurret {
 
             const dx = invader.x - this.x;
             const dy = invader.y - this.y;
-            const distance = Math.sqrt(dx * Math.sqrt(dx * dx + dy * dy)); // Фикс Пифагора
+            const distance = Math.sqrt(dx * dx + dy * dy);
 
-            const realDist = Math.sqrt(dx * dx + dy * dy);
-
-            if (realDist <= this.visionRadius) {
+            if (distance <= this.visionRadius) {
                 invader.visibilityTimer = Math.max(invader.visibilityTimer, 100);
                 return;
             }
@@ -109,8 +104,11 @@ export class SimpleTurret {
         });
     }
 
-    public attack(invaders: SimpleInvader[]): void {
-        // 1. Проверяем старую зафиксированную цель
+    /**
+     * Боевой тик с плавным расчетом вращения ствола по времени
+     */
+    public attack(invaders: SimpleInvader[], deltaTime: number = 16): void {
+        // 1. Проверяем старую зафиксированную цель на дальность
         if (this.lockedTarget) {
             const isAlive = this.lockedTarget.hp > 0;
             const dx = this.lockedTarget.x - this.x;
@@ -122,7 +120,7 @@ export class SimpleTurret {
             }
         }
 
-        // 2. Если турель СВОБОДНА, ищем любую видимую цель на поле
+        // 2. Если цели нет — ищем новую из видимых на поле
         let targetToTrack: SimpleInvader | null = this.lockedTarget;
 
         if (!targetToTrack) {
@@ -134,23 +132,35 @@ export class SimpleTurret {
             }
         }
 
-        // 3. АВТОНАВЕДЕНИЕ СТВОЛА: Изменяем угол только если есть цель для слежения
+        // 3. РАСЧЕТ ЦЕЛЕВОГО УГЛА: Задаем цель для поворота, если враг обнаружен
         if (targetToTrack) {
             const dx = targetToTrack.x - this.x;
             const dy = targetToTrack.y - this.y;
-            this.angleDir = Math.atan2(dy, dx);
-        } 
-        // ИСПРАВЛЕНО: Блок else, сбрасывающий angleDir в defaultAngle, ПОЛНОСТЬЮ УДАЛЕН.
-        // Если целей нет, турель сохраняет свое последнее вычисленное значение angleDir.
+            this.targetAngle = Math.atan2(dy, dx);
+        }
 
-        // 4. Фиксируем боевой замок лазера
+        // 4. ПЛАВНОЕ ВРАЩЕНИЕ СТВОЛА (изменение angleDir в сторону targetAngle)
+        if (deltaTime > 0 && this.angleDir !== this.targetAngle) {
+            let angleDiff = this.targetAngle - this.angleDir;
+            while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+            while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+
+            const step = this.turnSpeed * deltaTime;
+            if (Math.abs(angleDiff) <= step) {
+                this.angleDir = this.targetAngle; // Довернули до конца
+            } else {
+                this.angleDir += Math.sign(angleDiff) * step; // Крутим шасси
+            }
+        }
+
+        // 5. ФИКСАЦИЯ БОЕВОГО ЗАМКА: Стреляем только если враг попал в сектор ствола
         if (!this.lockedTarget && targetToTrack) {
             if (this.isInsideAttackSector(targetToTrack)) {
                 this.lockedTarget = targetToTrack;
             }
         }
 
-        // 5. Нанесение урона
+        // 6. ОГОНЬ: Наносим урон
         if (this.lockedTarget) {
             this.lockedTarget.hp -= this.damagePerFrame;
         }

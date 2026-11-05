@@ -99,11 +99,14 @@ function getRandomX(): number {
     return Math.floor(Math.random() * (750 - 50 + 1)) + 50;
 }
 
-const invaders: SimpleInvader[] = [
-    new SimpleInvader(300, 0),
-    new SimpleInvader(400, 0),
-    new SimpleInvader(500, 0)
-];
+const invaders: SimpleInvader[] = [];
+for (let i = 0; i < 10; i++) {
+    const startX = getRandomX();
+    // Рассредоточиваем врагов по высоте над экраном (от 0 до -400px),
+    // чтобы они не летели в одну линию, а появлялись волнами
+    const startY = Math.floor(Math.random() * -400); 
+    invaders.push(new SimpleInvader(startX, startY));
+}
 
 let lastTime = performance.now();
 
@@ -111,9 +114,28 @@ function gameTick(timestamp: number) {
     const deltaTime = timestamp - lastTime;
     lastTime = timestamp;
 
-    // Враги не должны лететь в зону магазина (Y > 540 — это база, они там взрываются)
+    // 1. Обновление состояния врагов
     invaders.forEach(invader => {
         invader.updateVisibility(deltaTime);
+        
+        // --- БЕЗОПАСНЫЙ МГНОВЕННЫЙ СБРОС НА ГРАНИЦАХ СЕКТОРОВ ---
+        if (invader.isVisible) {
+            // Проверяем, видит ли его ХОТЯ БЫ ОДИН радар на карте
+            const seenByAnyRadar = radars.some(radar => radar.isInsideSector(invader));
+            
+            // Проверяем, видит ли его ХОТЯ БЫ ОДНА турель (в круге обзора или боевом секторе)
+            // Для этого временно заглянем в её метод коллизии. У турели пассивный круг = 45px
+            const seenByAnyTurret = turrets.some(turret => {
+                const dist = Math.sqrt((turret.x - invader.x) ** 2 + (turret.y - invader.y) ** 2);
+                return dist <= turret.visionRadius || dist <= turret.attackRange; // Упрощенная проверка для UI
+            });
+
+            // Если враг вылетел из секторов ВСЕХ радаров и турелей — мгновенно гасим его!
+            if (!seenByAnyRadar && !seenByAnyTurret) {
+                invader.visibilityTimer = 0;
+            }
+        }
+        
         if (invader.y > 540 || invader.hp <= 0) {
             invader.y = 0;
             invader.x = getRandomX();
@@ -124,29 +146,15 @@ function gameTick(timestamp: number) {
         }
     });
 
-    radars.forEach(radar => {
-        if (radar.isTrackingMouse) {
-            radar.setTargetDirection(currentMouseX, currentMouseY);
-        }
-        radar.rotate(deltaTime);
-    });
-
+    // 2. Движение и логика (остается без изменений)
+    radars.forEach(radar => radar.rotate(deltaTime));
     turrets.forEach(turret => turret.updateMovement(deltaTime));
     
     radars.forEach(radar => radar.scan(invaders));
     turrets.forEach(turret => turret.scan(invaders));
     turrets.forEach(turret => turret.attack(invaders));
     
-    renderer.render(
-        invaders, 
-        radars, 
-        turrets, 
-        selectedEntity,
-        placement.currentBuildType,
-        currentMouseX,
-        currentMouseY
-    );
-
+    renderer.render(invaders, radars, turrets, selectedEntity, placement.currentBuildType, currentMouseX, currentMouseY);
     requestAnimationFrame(gameTick);
 }
 

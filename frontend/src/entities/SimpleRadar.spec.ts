@@ -18,8 +18,7 @@ describe('Юнит-тестирование радиолокатора РЛС (S
         expect(invader.isVisible).to.be.true;
     });
 
-it('должен плавно изменять угол сканирующей линии scanLineAngle по времени', () => {
-        // Явно передаем скорость 0.01 радиана за мс для точности теста
+    it('должен плавно изменять угол сканирующей линии scanLineAngle по времени', () => {
         const radar = new SimpleRadar(200, 200, 'РЛС-Тест', -Math.PI / 2, 90, 0.01);
         const startLineAngle = radar.scanLineAngle;
 
@@ -29,7 +28,6 @@ it('должен плавно изменять угол сканирующей �
     });
 
     it('должен разворачивать сканирующую линию обратно при достижении границ 90-градусного сектора', () => {
-        // Передаем скорость 0.1, чтобы за 10 мс гарантированно дойти до края (45 градусов)
         const radar = new SimpleRadar(200, 200, 'РЛС-Тест', -Math.PI / 2, 90, 0.1);
         radar.rotate(10); 
         
@@ -49,23 +47,27 @@ it('должен плавно изменять угол сканирующей �
         invader.visibilityTimer = 0;
 
         radar.scan([invader]);
-        expect(invader.isVisible).to.be.false;
+        expect(invader.isVisible).to.be.false; // Луч отвернулся, враг скрылся
     });
 
-    it('должен МГНОВЕННО обнулять таймер видимости врага, если он сместился за боковые границы сектора радара', () => {
+    it('не должен принудительно занулять таймер видимости врага, если он вышел за боковые границы сектора', () => {
         const radar = new SimpleRadar(200, 200, 'РЛС-Тест', -Math.PI / 2, 90, 0.01);
         const invader = new SimpleInvader(200, 100);
 
+        // 1. Луч РЛС изначально пересекает его — даём послесвечение
         radar.scan([invader]);
         expect(invader.visibilityTimer).to.equal(1500);
 
-        // Враг сместился за пределы угла 90 градусов
+        // 2. Смещаем врага далеко вбок за пределы угла 90 градусов
         invader.x = 50;
         invader.y = 200;
 
+        // 3. Запускаем сканирование
         radar.scan([invader]);
-        expect(invader.visibilityTimer).to.equal(0);
-        expect(invader.isVisible).to.be.false;
+
+        // ИТОГ: Таймер НЕ должен зануляться РЛС-кой, он плавно угаснет сам в основном цикле времени
+        expect(invader.visibilityTimer).to.equal(1500);
+        expect(invader.isVisible).to.be.true;
     });
 
     it('должен игнорировать вращение луча, если deltaTime меньше или равен нулю', () => {
@@ -90,5 +92,16 @@ it('должен плавно изменять угол сканирующей �
 
         radar.stopTracking();
         expect(radar.isTrackingMouse).to.be.false;
+    });
+
+    it('должен возвращать true, если цель внутри сектора, и false, если снаружи или далеко', () => {
+        const radar = new SimpleRadar(200, 200, 'РЛС-Тест', -Math.PI / 2, 90);
+        const inside = new SimpleInvader(200, 100);
+        const outsideAngle = new SimpleInvader(50, 200);
+        const outsideDist = new SimpleInvader(200, -50); // Дистанция 250 > 180
+
+        expect(radar.isInsideSector(inside)).to.be.true;
+        expect(radar.isInsideSector(outsideAngle)).to.be.false;
+        expect(radar.isInsideSector(outsideDist)).to.be.false;
     });
 });
