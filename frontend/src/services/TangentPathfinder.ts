@@ -1,25 +1,25 @@
-import { SimpleTurret } from './SimpleTurret';
-import { Waypoint } from './RouteManager';
+import { SimpleTurret } from '../entities/SimpleTurret';
+import { Waypoint } from '../entities/RouteManager';
+
+interface PathfinderNode {
+    x: number;
+    y: number;
+    parent: PathfinderNode | null;
+    g: number;
+    f: number;
+}
 
 export class TangentPathfinder {
     /**
-     * ИСПРАВЛЕНО: Теперь принимает динамические targetX и targetY бункера-цели
+     * Волновой навигатор с мощным боковым маневрированием для карт 1600x1200
      */
-    public findShortestPath(startX: number, startY: number, turrets: SimpleTurret[], targetX: number, targetY: number): Waypoint[] {
-        const criticalRadius = 70 + 6; // 76px (Радиус атаки + корпус дрона)
+    public findShortestPath(startX: number, startY: number, turrets: Array<SimpleTurret>, targetX: number, targetY: number): Array<Waypoint> {
+        const criticalRadius = 70 + 6; // 76px (Зона ПВО + корпус дрона)
 
-        interface Node {
-            x: number;
-            y: number;
-            parent: Node | null;
-            g: number;
-            f: number;
-        }
-
-        const openList: Node[] = [];
+        const openList: Array<PathfinderNode> = [];
         const closedSet: Set<string> = new Set();
 
-        const startNode: Node = {
+        const startNode: PathfinderNode = {
             x: Math.round(startX),
             y: Math.round(startY),
             parent: null,
@@ -28,10 +28,10 @@ export class TangentPathfinder {
         };
         openList.push(startNode);
 
-        let endNode: Node | null = null;
+        let endNode: PathfinderNode | null = null;
         let iterations = 0;
         
-        while (openList.length > 0 && iterations < 2500) {
+        while (openList.length > 0 && iterations < 6000) {
             iterations++;
             
             openList.sort((a, b) => a.f - b.f);
@@ -41,20 +41,19 @@ export class TangentPathfinder {
             if (closedSet.has(key)) continue;
             closedSet.add(key);
 
-            // Симуляция завершена, если луч подобрался к уровню здания назначения
             if (curr.y >= targetY - 20) {
                 endNode = curr;
                 break;
             }
 
-            const dx = [-20, -10, 0, 10, 20];
-            const dy = 25; 
+            const dx = [-60, -30, -10, 0, 30, 60];
+            const dy = 20; 
 
             for (const offset_x of dx) {
                 const nextX = curr.x + offset_x;
                 const nextY = curr.y + dy;
 
-                if (nextX < 30 || nextX > 1570) continue;
+                if (nextX < 20 || nextX > 1580) continue;
 
                 let hitWall = false;
                 for (const turret of turrets) {
@@ -69,7 +68,6 @@ export class TangentPathfinder {
 
                 const stepDist = Math.sqrt(offset_x * offset_x + dy * dy);
                 const g = curr.g + stepDist;
-                // Эвристическая оценка H-cost теперь честно считает расстояние до координат бункера
                 const h = Math.sqrt((targetX - nextX) ** 2 + (targetY - nextY) ** 2);
                 const f = g + h;
 
@@ -77,9 +75,9 @@ export class TangentPathfinder {
             }
         }
 
-        let rawPath: Waypoint[] = [];
+        const rawPath: Array<Waypoint> = [];
         if (endNode) {
-            let n: Node | null = endNode;
+            let n: PathfinderNode | null = endNode;
             while (n !== null) {
                 rawPath.push({ x: n.x, y: n.y });
                 n = n.parent;
@@ -87,13 +85,12 @@ export class TangentPathfinder {
             rawPath.reverse();
         } else {
             rawPath.push({ x: startX, y: startY });
+            rawPath.push({ x: targetX, y: targetY });
         }
         
-        // Финальная точка маршрута — строго центр бункера назначения
         rawPath.push({ x: targetX, y: targetY });
 
-        // --- АЛГОРИТМ НАТЯЖЕНИЯ НИТИ (PATH SMOOTHING) ---
-        const optimizedPath: Waypoint[] = [];
+        const optimizedPath: Array<Waypoint> = [];
         if (rawPath.length > 0) {
             optimizedPath.push(rawPath[0]);
             
@@ -116,9 +113,9 @@ export class TangentPathfinder {
         return optimizedPath;
     }
 
-    private isLineSafe(p1: Waypoint, p2: Waypoint, turrets: SimpleTurret[], radius: number): boolean {
-        for (let i = 1; i <= 8; i++) {
-            const t = i / 9;
+    private isLineSafe(p1: Waypoint, p2: Waypoint, turrets: Array<SimpleTurret>, radius: number): boolean {
+        for (let i = 1; i <= 15; i++) {
+            const t = i / 16;
             const checkX = p1.x + (p2.x - p1.x) * t;
             const checkY = p1.y + (p2.y - p1.y) * t;
 

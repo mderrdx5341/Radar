@@ -1,5 +1,5 @@
 import { SimpleTurret } from './SimpleTurret';
-import { TangentPathfinder } from './TangentPathfinder';
+import { TangentPathfinder } from '../services/TangentPathfinder';
 import { SimpleBuilding } from './buildings/SimpleBuilding';
 
 export interface Waypoint {
@@ -9,12 +9,12 @@ export interface Waypoint {
 
 export class RouteManager {
     // 10 фиксированных тактических коридоров взлёта по оси X зафиксированы цифрами
-    public readonly spawnPoints: number[] = [60, 130, 200, 270, 340, 410, 480, 550, 620, 690];
+public readonly spawnPoints: Array<number> = Array.of(100, 250, 400, 550, 700, 850, 1000, 1150, 1300, 1450);
     
-    // Global registry of turrets known to the swarm
-    private discoveredTurrets: SimpleTurret[] = [];
+    // Глобальный реестр турелей ПВО, о которых рой уже знает
+    private discoveredTurrets: Array<SimpleTurret> = [];
 
-    // ИНКАПСУЛЯЦИЯ: Выделенный навигатор изолирован внутри менеджера
+    // Инкапсулированный планировщик путей по касательным
     private pathfinder: TangentPathfinder;
 
     constructor() {
@@ -25,7 +25,7 @@ export class RouteManager {
     /**
      * Возвращает список обнаруженных турелей
      */
-    public getDiscoveredTurrets(): SimpleTurret[] {
+    public getDiscoveredTurrets(): Array<SimpleTurret> {
         return this.discoveredTurrets;
     }
 
@@ -39,14 +39,13 @@ export class RouteManager {
     }
 
     public reportSuccess(spawnX: number): void {
-        // Метод сохранен для стабильности вызовов в main.ts
+        // Метод сохранен для совместимости
     }
 
     /**
-     * ИСПРАВЛЕНО: Метод только определяет цель, а расчет кратчайшего пути 
-     * полностью делегирует инкапсулированному классу TangentPathfinder!
+     * Безошибочное определение цели и вызов инкапсулированного TangentPathfinder
      */
-    public generateFlightPlan(startX: number, startY: number, buildings: SimpleBuilding[]): Waypoint[] {
+    public generateFlightPlan(startX: number, startY: number, buildings: Array<SimpleBuilding>): Array<Waypoint> {
         // Фильтруем только функционирующие здания в тылу
         const activeBuildings = buildings.filter(b => !b.isDestroyed);
         
@@ -55,14 +54,20 @@ export class RouteManager {
             return [{ x: startX, y: 1200 }];
         }
 
-        // Вычисляем индекс коридора взлёта
-        const spawnIndex = this.spawnPoints.indexOf(startX);
+        // Находим индекс текущего коридора вылета (0-9)
+        let spawnIndex = 0;
+        let minDiff = Infinity;
+        for (let i = 0; i < this.spawnPoints.length; i++) {
+            const diff = Math.abs(this.spawnPoints[i] - startX);
+            if (diff < minDiff) {
+                minDiff = diff;
+                spawnIndex = i;
+            }
+        }
         
-        // Назначаем здание-цель по остатку от деления, распределяя рой веером
-        const targetBuilding = activeBuildings[Math.abs(spawnIndex) % activeBuildings.length];
+        // Жестко привязываем коридор к активным зданиям сессии
+        const targetBuilding = activeBuildings[spawnIndex % activeBuildings.length];
 
-        // ДЕЛЕГИРОВАНИЕ: Передаем стартовую точку, координаты выбранного бункера-цели 
-        // и список известных ПВО в наш скрытый класс-поиск пути TangentPathfinder
         return this.pathfinder.findShortestPath(
             startX, 
             startY, 

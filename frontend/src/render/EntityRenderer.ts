@@ -116,6 +116,47 @@ export class EntityRenderer {
         this.ctx.fillRect(invader.x - barWidth / 2, invader.y - 15, barWidth * (invader.hp / 100), barHeight);
     }
 
+    /**
+     * Отрисовка тактических полетных планов (путевых точек) роя БПЛА
+     */
+    public drawSwarmPaths(invaders: SimpleInvader[]): void {
+        this.ctx.save();
+        this.ctx.lineWidth = 1;
+        this.ctx.setLineDash([4, 4]); // Штриховая пунктирная линия
+
+        invaders.forEach(invader => {
+            if (invader.hp <= 0 || invader.waypoints.length === 0) return;
+
+            // Цвет линии плавно угасает в зависимости от того, виден ли дрон РЛС
+            this.ctx.strokeStyle = invader.isVisible 
+                ? 'rgba(255, 123, 114, 0.4)'  // Полупрозрачный красный для обнаруженных
+                : 'rgba(240, 246, 252, 0.08)'; // Едва заметный серый для скрытых в тумане
+
+            this.ctx.beginPath();
+            // Начинаем вести линию от текущего физического положения дрона на карте
+            this.ctx.moveTo(invader.x, invader.y);
+
+            // Соединяем отрезками все последующие развилки обхода ПВО из памяти БПЛА
+            invader.waypoints.forEach(wp => {
+                this.ctx.lineTo(wp.x, wp.y);
+            });
+            this.ctx.stroke();
+
+            // Дополнительно рисуем микро-маркеры (точки) на развилках-касательных
+            this.ctx.fillStyle = invader.isVisible ? 'rgba(255, 123, 114, 0.5)' : 'rgba(240, 246, 252, 0.1)';
+            invader.waypoints.forEach((wp, idx) => {
+                // Не рисуем маркер для самой последней точки (центра здания), чтобы не спамить графику
+                if (idx === invader.waypoints.length - 1) return;
+                
+                this.ctx.beginPath();
+                this.ctx.arc(wp.x, wp.y, 2, 0, Math.PI * 2);
+                this.ctx.fill();
+            });
+        });
+
+        this.ctx.restore();
+    }
+
     public drawBuilding(building: SimpleBuilding): void {
         if (building.isDestroyed) {
             // Если здание взорвано, рисуем темный остов руин
