@@ -3,6 +3,7 @@ import { SimpleInvader } from './SimpleInvader';
 export class SimpleTurret {
     public x: number;
     public y: number;
+    public name: string;
     
     public visionRadius: number = 45;  
     public attackRange: number = 90;  
@@ -13,9 +14,23 @@ export class SimpleTurret {
 
     private defaultAngle: number;       
 
-    constructor(x: number, y: number, angleDir: number = -Math.PI / 2, fovDegrees: number = 45) {
+    // --- ПАРАМЕТРЫ ПЕРЕДВИЖЕНИЯ ТУРЕЛИ ---
+    public targetX: number;            // Координата X, куда едет турель
+    public targetY: number;            // Координата Y, куда едет турель
+    private moveSpeed: number = 0.12;   // Скорость движения (пикселей в миллисекунду)
+
+    constructor(
+        x: number, 
+        y: number, 
+        name: string = 'Турель-Страж', 
+        angleDir: number = -Math.PI / 2, 
+        fovDegrees: number = 45
+    ) {
         this.x = x;
         this.y = y;
+        this.targetX = x; // Изначально цель совпадает с текущим местом
+        this.targetY = y;
+        this.name = name;
         this.angleDir = angleDir;
         this.defaultAngle = angleDir;
         this.fov = fovDegrees * Math.PI / 180;
@@ -23,6 +38,38 @@ export class SimpleTurret {
 
     public get currentTarget(): SimpleInvader | null {
         return this.lockedTarget;
+    }
+
+    /**
+     * Приказ начать движение к новым координатам
+     */
+    public moveTo(targetX: number, targetY: number): void {
+        this.targetX = targetX;
+        this.targetY = targetY;
+    }
+
+    /**
+     * Плавно передвигает турель к целевой точке в зависимости от deltaTime
+     */
+    public updateMovement(deltaTime: number): void {
+        if (deltaTime <= 0) return;
+
+        const dx = this.targetX - this.x;
+        const dy = this.targetY - this.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance > 0) {
+            const step = this.moveSpeed * deltaTime;
+            if (distance <= step) {
+                // Если мы очень близко — мгновенно встаем в цель, чтобы не проскочить
+                this.x = this.targetX;
+                this.y = this.targetY;
+            } else {
+                // Передвигаемся по вектору направления
+                this.x += (dx / distance) * step;
+                this.y += (dy / distance) * step;
+            }
+        }
     }
 
     private isInsideAttackSector(invader: SimpleInvader): boolean {
@@ -47,9 +94,11 @@ export class SimpleTurret {
 
             const dx = invader.x - this.x;
             const dy = invader.y - this.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
+            const distance = Math.sqrt(dx * Math.sqrt(dx * dx + dy * dy)); // Фикс Пифагора
 
-            if (distance <= this.visionRadius) {
+            const realDist = Math.sqrt(dx * dx + dy * dy);
+
+            if (realDist <= this.visionRadius) {
                 invader.visibilityTimer = Math.max(invader.visibilityTimer, 100);
                 return;
             }

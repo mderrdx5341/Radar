@@ -3,6 +3,7 @@ import { SimpleInvader } from './SimpleInvader';
 export class SimpleRadar {
     public x: number;
     public y: number;
+    public name: string;
     public visionRadius: number = 180;
     public angleDir: number;            
     public fov: number;                 
@@ -10,24 +11,66 @@ export class SimpleRadar {
     private rotationSpeed: number;      
     private rotationDirection: number = 1;
 
+    public targetAngle: number;         
+    private turnSpeed: number = 0.003;  
+
+    // --- НОВОЕ: СОСТОЯНИЕ РУЧНОГО УДЕРЖАНИЯ СЕКТОРА ---
+    public isTrackingMouse: boolean = false; 
+
     constructor(
         x: number, 
         y: number, 
+        name: string = 'РЛС-Альфа',
         angleDir: number = -Math.PI / 2, 
         fovDegrees: number = 90, 
-        speed: number = 0.005           
+        speed: number = 0.0025
     ) {
         this.x = x;
         this.y = y;
+        this.name = name;
         this.angleDir = angleDir;
         this.scanLineAngle = angleDir;  
+        this.targetAngle = angleDir; 
         this.fov = fovDegrees * Math.PI / 180;
         this.rotationSpeed = speed;
+    }
+
+    /**
+     * Включает режим следования за курсором
+     */
+    public startTracking(): void {
+        this.isTrackingMouse = true;
+    }
+
+    /**
+     * Выключает режим следования за курсором (фиксация направления)
+     */
+    public stopTracking(): void {
+        this.isTrackingMouse = false;
+    }
+
+    public setTargetDirection(mouseX: number, mouseY: number): void {
+        this.targetAngle = Math.atan2(mouseY - this.y, mouseX - this.x);
     }
 
     public rotate(deltaTime: number): void {
         if (deltaTime <= 0) return;
 
+        // ПЛАВНЫЙ ПОВОРОТ: сектор крутится, только если угол не совпадает с целью
+        if (this.angleDir !== this.targetAngle) {
+            let angleDiff = this.targetAngle - this.angleDir;
+            while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+            while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+
+            const step = this.turnSpeed * deltaTime;
+            if (Math.abs(angleDiff) <= step) {
+                this.angleDir = this.targetAngle;
+            } else {
+                this.angleDir += Math.sign(angleDiff) * step;
+            }
+        }
+
+        // ВРАЩЕНИЕ ВНУТРЕННЕГО ЛУЧА
         this.scanLineAngle += this.rotationSpeed * deltaTime * this.rotationDirection;
         let diff = this.scanLineAngle - this.angleDir;
 
@@ -49,7 +92,6 @@ export class SimpleRadar {
 
             if (distance <= this.visionRadius) {
                 const angleToInvader = Math.atan2(dy, dx);
-                
                 let sectorDiff = angleToInvader - this.angleDir;
                 while (sectorDiff < -Math.PI) sectorDiff += Math.PI * 2;
                 while (sectorDiff > Math.PI) sectorDiff -= Math.PI * 2;
