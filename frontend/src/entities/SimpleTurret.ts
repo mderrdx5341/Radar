@@ -172,6 +172,9 @@ export class SimpleTurret {
         // 6. ОГОНЬ: Наносим урон зафиксированной цели
         if (this.lockedTarget) {
             this.lockedTarget.hp -= this.damagePerFrame;
+            if (!this.lockedTarget.attackers.includes(this)) {
+                this.lockedTarget.attackers.push(this);
+            }
         }
     }
 }

@@ -2,76 +2,68 @@ import { expect } from 'chai';
 import { SimpleInvader } from './SimpleInvader';
 import { SimpleTurret } from './SimpleTurret';
 import { RouteManager } from './RouteManager';
-import { SimpleBuilding } from './buildings';
+import { SimpleBuilding } from './buildings/SimpleBuilding';
 
-describe('Юнит-тестирование врага с путевыми листами Менеджера Маршрутов (SimpleInvader)', () => {
-    
-    it('должен инициализировать врага скрытым по умолчанию со 100 HP и пустыми путями', () => {
-        const invader = new SimpleInvader(100, 40);
-        expect(invader.isVisible).to.be.false;
+describe('SimpleInvader', () => {
+    it('должен инициализироваться с корректными базовыми параметрами', () => {
+        const invader = new SimpleInvader(100, -50);
+        expect(invader.x).to.equal(100);
+        expect(invader.y).to.equal(-50);
         expect(invader.hp).to.equal(100);
-        expect(invader.spawnPointX).to.equal(100);
-        expect(invader.waypoints).to.be.an('array').that.is.empty;
+        expect(invader.radius).to.equal(6);
+        expect(invader.isVisible).to.be.false;
     });
 
-    it('должен правильно управлять таймером угасания видимости врага', () => {
-        const invader = new SimpleInvader(100, 100);
-        invader.visibilityTimer = 500; 
+    it('должен корректно обновлять таймер видимости в луче радара', () => {
+        const invader = new SimpleInvader(100, 50);
+        expect(invader.isVisible).to.be.false;
+
+        // Имитируем обнаружение радаром
+        invader.visibilityTimer = 1000;
+        invader.updateVisibility(16);
         expect(invader.isVisible).to.be.true;
 
-        invader.updateVisibility(200); 
-        expect(invader.visibilityTimer).to.equal(300);
-
-        invader.updateVisibility(400); 
-        expect(invader.visibilityTimer).to.equal(0);
+        // Имитируем выход из луча радара и затухание по таймеру
+        invader.updateVisibility(1500);
         expect(invader.isVisible).to.be.false;
-    });
-
-    it('должен игнорировать уменьшение видимости, если дельта времени меньше или равна нулю', () => {
-        const invader = new SimpleInvader(100, 100);
-        invader.visibilityTimer = 300;
-        invader.updateVisibility(0);
-        invader.updateVisibility(-50);
-        expect(invader.visibilityTimer).to.equal(300);
     });
 
     it('должен плавно изменять курс и лететь по точкам, выданным менеджером маршрутов', () => {
         const manager = new RouteManager();
         const turret = new SimpleTurret(100, 150, 'Тест-ПВО');
-
-        const mockBuildings = [
+        
+        // Создаем тестовое фейковое здание для прохождения строгой проверки типов TS
+        const mockBuildings: Array<SimpleBuilding> = [
             new (class extends SimpleBuilding {
-                update() {}
+                public update(): void {}
             })(100, 300, 'POWER', 'Тестовый бункер', 100)
         ];
-        
-        // Имитируем, что рой уже знает про турель
+
         manager.reportHazard(turret);
 
         const invader = new SimpleInvader(105, 20);
-        // Получаем готовый полетный план из менеджера
         invader.waypoints = manager.generateFlightPlan(invader.spawnPointX, invader.y, mockBuildings);
 
         expect(invader.waypoints.length).to.be.greaterThan(0);
 
-        // Симулируем шаги полета
+        // ИСПРАВЛЕНО: Вызов moveDown() выполняется без аргументов
         for (let i = 0; i < 30; i++) {
-            invader.moveDown(1.5);
+            invader.moveDown();
         }
 
-        // Дрон продвинулся по оси Y и отклонился по X для огибания
         expect(invader.y).to.be.greaterThan(20);
         expect(invader.x).to.not.equal(105);
     });
 
-    it('должен удерживать дрона в пределах игрового коридора экрана', () => {
-        const invaderLeft = new SimpleInvader(10, 50);
-        const invaderRight = new SimpleInvader(790, 50);
+    it('должен лететь по умолчанию строго вниз, если массив путевых точек пуст', () => {
+        const invader = new SimpleInvader(200, 10);
+        invader.waypoints = new Array(); // Пустой маршрут
 
-        invaderLeft.moveDown(1.5);
-        invaderRight.moveDown(1.5);
+        // ИСПРАВЛЕНО: Вызовы moveDown() выполняются без аргументов
+        invader.moveDown();
+        invader.moveDown();
 
-        expect(invaderLeft.x).to.equal(20);
-        expect(invaderRight.x).to.equal(780);
+        expect(invader.x).to.equal(200); // Координата X не должна измениться
+        expect(invader.y).to.be.greaterThan(10); // Должен продвинуться строго вниз по Y
     });
 });

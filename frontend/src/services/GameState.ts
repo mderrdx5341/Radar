@@ -114,14 +114,17 @@ export class GameState {
             if (!shouldRespawn && (invader.y > 1200 || invader.hp <= 0)) {
                 if (invader.hp <= 0) {
                     this.score++;
-                    const killerTurret = this.turrets.find(t => t.currentTarget === invader);
-                    if (killerTurret) this.routeManager.reportHazard(killerTurret);
+                    invader.attackers.forEach(turret => {
+                        this.routeManager.reportHazard(turret);
+                        console.log(`[Радиосеть Роя]: Перехвачены координаты позиции ПВО: ${turret.name}`);
+                    });
                 }
                 shouldRespawn = true;
             }
 
             // Респавн и пересчёт веера Flight Plan по оставшимся целям
             if (shouldRespawn) {
+                invader.attackers = new Array<SimpleTurret>();
                 invader.y = Math.floor(Math.random() * -200) - 40;
                 invader.x = invader.spawnPointX;
                 invader.hp = 100;

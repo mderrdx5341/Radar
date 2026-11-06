@@ -65,8 +65,8 @@ export class CanvasRenderer {
             this.entityRenderer.drawBuilding(building);
         });
 
-        this.entityRenderer.drawSwarmPaths(invaders);
-        
+        //this.entityRenderer.drawSwarmPaths(invaders);
+
         invaders.forEach(invader => {
             this.entityRenderer.drawInvader(invader);
         });

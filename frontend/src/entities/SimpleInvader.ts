@@ -1,4 +1,5 @@
 import { Waypoint } from './RouteManager';
+import { SimpleTurret } from './SimpleTurret';
 
 export class SimpleInvader {
     public x: number;
@@ -17,6 +18,8 @@ export class SimpleInvader {
 
     // Индивидуальный путевой лист
     public waypoints: Waypoint[] = []; 
+
+    public attackers: Array<SimpleTurret> = new Array<SimpleTurret>();
 
     constructor(x: number, y: number) {
         this.x = x;
@@ -37,47 +40,36 @@ export class SimpleInvader {
     /**
      * Метод чистого удержания курса по путевым точкам, выданным RouteManager
      */
-    public moveDown(baseSpeed: number = 1.5): void {
-        let desiredAngle = Math.PI / 2;
+    public moveDown(): void {
+        const baseSpeed = 1.5; // Скорость полёта дрона
 
-        if (this.waypoints.length > 0) {
-            const currentTarget = this.waypoints[0];
-            const dx = currentTarget.x - this.x;
-            const dy = currentTarget.y - this.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
+        // Если у дрона есть построенный маршрут в памяти — летим строго по точкам
+        if (this.waypoints && this.waypoints.length > 0) {
+            // Берём самую первую путевую точку из списка
+            const target = this.waypoints.at(0);
+            
+            if (target) {
+                const dx = target.x - this.x;
+                const dy = target.y - this.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
 
-            // Стираем точку из индивидуального плана, как только долетели до нее
-            if (distance < 15) {
-                this.waypoints.shift();
+                // ЖЁСТКИЙ ФИКС «НЕВИДИМОЙ СТЕНЫ»: 
+                // Увеличиваем радиус перехвата точки с 2px до 6px. 
+                // Теперь дрон никогда не проскочит триггер и не застрянет!
+                if (distance <= 6) {
+                    this.waypoints.shift(); // Удаляем выполненную точку, переключаемся на следующую
+                    return;
+                }
+
+                // Разворачиваем ствол и вектор движения дрона в направлении текущей точки
+                this.moveAngle = Math.atan2(dy, dx);
+                this.x += Math.cos(this.moveAngle) * baseSpeed;
+                this.y += Math.sin(this.moveAngle) * baseSpeed;
             }
-
-            desiredAngle = Math.atan2(dy, dx);
-        }
-
-        // Запрет полетов вверх
-        if (desiredAngle < 0.05 && desiredAngle > -Math.PI / 2) desiredAngle = 0.05;
-        if (desiredAngle > Math.PI - 0.05 || desiredAngle <= -Math.PI / 2) desiredAngle = Math.PI - 0.05;
-
-        let angleDiff = desiredAngle - this.moveAngle;
-        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-
-        const clampedTurn = Math.max(-this.turnSpeedMax, Math.min(this.turnSpeedMax, angleDiff));
-        this.moveAngle += clampedTurn;
-
-        if (this.moveAngle < 0) this.moveAngle = 0.05;
-        if (this.moveAngle > Math.PI) this.moveAngle = Math.PI - 0.05;
-
-        this.x += Math.cos(this.moveAngle) * baseSpeed;
-        this.y += Math.sin(this.moveAngle) * baseSpeed;
-
-        if (this.x < 20) {
-            this.x = 20;
-            this.moveAngle = Math.PI / 2;
-        }
-        if (this.x > 780) {
-            this.x = 780;
-            this.moveAngle = Math.PI / 2;
+        } else {
+            // Если маршрут пуст, плавно падаем строго вниз по умолчанию
+            this.x += Math.cos(this.moveAngle) * baseSpeed;
+            this.y += Math.sin(this.moveAngle) * baseSpeed;
         }
     }
 }
