@@ -53,7 +53,7 @@ export class GameState {
     public update(deltaTime: number, input: InputManager, collisionManager: CollisionManager, worldMouse: { x: number, y: number }): void {
         
         // 1. АПДЕЙТ ИНТЕРФЕЙСА: Транслируем покадровое движение мыши (удержание ПКМ для РЛС)
-        this.interfaceService.update(input, worldMouse);
+        //this.interfaceService.update(input, worldMouse);
 
         // 2. ЗАМОРОЗКА МИРА: Если игра на паузе или бункеры уничтожены
         if (this.isPaused || this.isGameOver) return;

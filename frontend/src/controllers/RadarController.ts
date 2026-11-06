@@ -10,25 +10,29 @@ export class RadarController extends EntityController {
     }
 
     /**
-     * ПЕРЕОПРЕДЕЛЕНИЕ ПКМ: Мгновенно разворачиваем конус обзора в точку клика
+     * Клик ПКМ: Разворот луча в целевую точку
      */
-    public handleRightClick(worldX: number, worldY: number): void {
-        this.entity.setTargetDirection(worldX, worldY);
-    }
-
-    /**
-     * ПЕРЕОПРЕДЕЛЕНИЕ HOLD-ДВИЖЕНИЯ: Если ПКМ удерживается — луч плавно следует за курсором
-     */
-    public handleMouseMove(worldX: number, worldY: number, isMouseDown: boolean): void {
-        if (isMouseDown) {
+    public handleRightClick = (worldX: number, worldY: number): void => {
+        if (this.entity) {
             this.entity.setTargetDirection(worldX, worldY);
         }
-    }
+    };
 
     /**
-     * ДЕСТРУКТОР СБРОСА ФОКУСА: Гасим флаг слежения, чтобы луч зафиксировался в текущей точке
+     * Движение мыши: Пока удерживается ПКМ, непрерывно транслируем координаты
      */
-    public onDeselect(): void {
-        this.entity.stopTracking();
-    }
+    public handleMouseMove = (worldX: number, worldY: number, isMouseDown: boolean): void => {
+        if (isMouseDown && this.entity) {
+            this.entity.setTargetDirection(worldX, worldY);
+        }
+    };
+
+    /**
+     * Сброс фокуса: Гасим трекинг
+     */
+    public onDeselect = (): void => {
+        if (this.entity) {
+            this.entity.stopTracking();
+        }
+    };
 }

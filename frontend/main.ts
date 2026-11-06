@@ -53,8 +53,14 @@ function gameTick(timestamp: number) {
 
     const worldMouse = camera.screenToWorld(mousePos.x, mousePos.y);
 
+    state.interfaceService.update(input, worldMouse);
     // Запускаем центральный апдейт симуляции
     state.update(deltaTime, input, collisionManager, worldMouse);
+
+        // ИСПРАВЛЕНО: Вытаскиваем текущий живой физический объект из активного контроллера
+    const selectedEntity = state.interfaceService.activeController 
+        ? state.interfaceService.activeController.getEntity() 
+        : null;
     
     // Передаем массивы юнитов из объекта state.player в рендерер для сборки кадра
     renderer.render(

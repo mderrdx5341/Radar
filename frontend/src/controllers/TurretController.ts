@@ -2,7 +2,6 @@ import { EntityController } from './EntityController';
 import { SimpleTurret } from '../entities/SimpleTurret';
 
 export class TurretController extends EntityController {
-    // Явно типизируем внутреннюю сущность для удобства работы
     protected entity: SimpleTurret;
 
     constructor(turret: SimpleTurret) {
@@ -11,12 +10,11 @@ export class TurretController extends EntityController {
     }
 
     /**
-     * ПЕРЕОПРЕДЕЛЕНИЕ ПКМ: Отдаём пушке ПВО приказ на плавную передислокацию
+     * Приказ на движение ПВО по ПКМ
      */
-    public handleRightClick(worldX: number, worldY: number): void {
-        this.entity.moveTo(worldX, worldY);
-    }
-
-    // Методы handleMouseMove и onDeselect для ПВО не нужны, 
-    // поэтому мы их просто не реализуем — сработает пустой базовый класс.
+    public handleRightClick = (worldX: number, worldY: number): void => {
+        if (this.entity) {
+            this.entity.moveTo(worldX, worldY);
+        }
+    };
 }

@@ -1,10 +1,11 @@
 import { InputManager } from './InputManager';
 import { CameraSystem } from './CameraSystem';
 import { Player } from './Player';
-import { GameState } from './GameState'; // Импортируем GameState
+import { GameState } from './GameState';
 import { EntityController, TurretController, RadarController } from '../controllers';
 
 export class InterfaceService {
+    // Полиморфная ссылка на активный низкоуровневый контроллер (РЛС или ПВО)
     public activeController: EntityController | null = null;
 
     constructor() {
@@ -19,7 +20,6 @@ export class InterfaceService {
         if (screenY > canvasHeight - 60) {
             if (screenX >= 20 && screenX <= 160) player.placement.startBuilding('RADAR');
             if (screenX >= 180 && screenX <= 320) player.placement.startBuilding('TURRET');
-            // ИСПРАВЛЕНО: Кнопка "3. Пауза" теперь корректно переключает флаг в ядре GameState
             if (screenX >= 340 && screenX <= 480) state.isPaused = !state.isPaused;
             return;
         }
@@ -33,15 +33,20 @@ export class InterfaceService {
         }
 
         // 3. Слой тактического выбора объектов на поле боя
-        const clickedRadar = player.radars.find(r => Math.abs(r.x - worldPos.x) <= 15 && Math.abs(r.y - worldPos.y) <= 15);
-        const clickedTurret = player.turrets.find(t => Math.abs(t.x - worldPos.x) <= 15 && Math.abs(t.y - worldPos.y) <= 15);
+        // Ищем клик с небольшим запасом радиуса (20px), чтобы по пушкам было легко кликать
+        const clickedRadar = player.radars.find(r => Math.sqrt((r.x - worldPos.x) ** 2 + (r.y - worldPos.y) ** 2) <= 20);
+        const clickedTurret = player.turrets.find(t => Math.sqrt((t.x - worldPos.x) ** 2 + (t.y - worldPos.y) ** 2) <= 20);
 
+        // Сбрасываем старый выбор перед активацией нового
         this.deselectCurrentEntity();
 
+        // ИСПРАВЛЕНО: Создаем контроллеры и жестко привязываем к ним выбранные сущности
         if (clickedRadar) {
             this.activeController = new RadarController(clickedRadar);
+            console.log(`[Интерфейс]: Выбрана радарная станция ${clickedRadar.name}`);
         } else if (clickedTurret) {
             this.activeController = new TurretController(clickedTurret);
+            console.log(`[Интерфейс]: Выбрана батарея ПВО ${clickedTurret.name}`);
         }
     }
 
