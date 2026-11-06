@@ -5,4 +5,5 @@ export * from './GameState';
 export * from './TangentPathfinder';
 export * from './Player';
 export * from './InterfaceService';
+export * from './EnemySwarm';
 
