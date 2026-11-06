@@ -1,146 +1,110 @@
-import { 
-    SimpleInvader, SimpleRadar, SimpleTurret, RouteManager,
-    PowerNode, RepairBay, ResourceHarvester, SimpleBuilding 
-} from '../entities';
+import { SimpleInvader, RouteManager } from '../entities';
 import { InputManager } from './InputManager';
 import { CollisionManager } from './CollisionManager';
+import { Player } from './Player';
+import { InterfaceService } from './InterfaceService'; // Подключаем тактический диспетчер
 
 export class GameState {
-    // Хранение списков юнитов и строений (Мировые координаты)
-    public invaders: SimpleInvader[] = [];
-    public radars: SimpleRadar[] = [];
-    public turrets: SimpleTurret[] = [];
-    public buildings: SimpleBuilding[] = [];
+    public player: Player;
+    public invaders: Array<SimpleInvader> = new Array<SimpleInvader>();
+    
+    // Глобальный интерфейсный сервис управления кликами и выбором
+    public interfaceService: InterfaceService;
 
-    // Глобальные триггеры сессии, статистика и выбор
+    // Системные триггеры сессии
     public score: number = 0;
     public isPaused: boolean = false;
     public isGameOver: boolean = false;
-    public selectedEntity: SimpleRadar | SimpleTurret | null = null;
 
     private routeManager: RouteManager;
 
-    // Экономический контекст для пассивного тика зданий
-    private econContext = {
-        addGold: (amount: number) => {
-            // Будет связано с кошельком золота на следующем этапе
-            console.log(`[GameState Экономика]: Добыто золота: +${amount}`);
-        }
-    };
-
     constructor(routeManager: RouteManager) {
         this.routeManager = routeManager;
+        this.player = new Player();
+        // Инициализируем наш интерфейсный диспетчер
+        this.interfaceService = new InterfaceService();
         this.initSession();
     }
 
     /**
-     * Первоначальное развёртывание сессии: спавн зданий, РЛС, ПВО и роя БПЛА
+     * Сброс и развёртывание сессии с нуля
      */
     public initSession(): void {
         this.score = 0;
         this.isPaused = false;
         this.isGameOver = false;
-        this.selectedEntity = null;
+        
+        // Сбрасываем выделение в интерфейсе
+        this.interfaceService.deselectCurrentEntity();
+        this.player.initStartingUnits();
 
-        // Инициализация оборонительных рубежей
-        this.radars = [new SimpleRadar(800, 1000, 'РЛС-1')];
-        this.turrets = [new SimpleTurret(800, 1080, 'ПВО-1')];
-
-        // Разворачиваем 3 физических здания в тылу на высоте Y: 1120
-        this.buildings = [
-            new PowerNode(400, 1120, 'Энергоблок ⚡'),
-            new RepairBay(800, 1120, 'Ремонтный блок 🛠️'),
-            new ResourceHarvester(1200, 1120, 'Ресурсная шахта 💎')
-        ];
-
-        // Генерация роя БПЛА по 10 фиксированным коридорам взлёта
-        this.invaders = [];
+        // Спавн БПЛА-камикадзе
+        this.invaders = new Array<SimpleInvader>();
         this.routeManager.spawnPoints.forEach(spawnX => {
             const invader = new SimpleInvader(spawnX, Math.floor(Math.random() * -300) - 50);
-            invader.waypoints = this.routeManager.generateFlightPlan(invader.spawnPointX, invader.y, this.buildings);
+            invader.waypoints = this.routeManager.generateFlightPlan(invader.spawnPointX, invader.y, this.player.buildings);
             this.invaders.push(invader);
         });
     }
 
     /**
-     * Основной высокоуровневый цикл симуляции боя и логики за кадр
+     * ВЫСОКОУРОВНЕВЫЙ ТИК ОБНОВЛЕНИЯ ИГРОВОГО МИРА
      */
-    public update(
-        deltaTime: number, 
-        input: InputManager, 
-        collisionManager: CollisionManager, 
-        worldMouse: { x: number, y: number }
-    ): void {
-        // Если игра на паузе или окончена — обновляем только вектор ведения мыши у выделенного радара
-        if (this.isPaused || this.isGameOver) {
-            this.radars.forEach(radar => {
-                if (radar.isTrackingMouse) radar.setTargetDirection(worldMouse.x, worldMouse.y);
-            });
-            return;
-        }
+    public update(deltaTime: number, input: InputManager, collisionManager: CollisionManager, worldMouse: { x: number, y: number }): void {
+        
+        // 1. АПДЕЙТ ИНТЕРФЕЙСА: Транслируем покадровое движение мыши (удержание ПКМ для РЛС)
+        this.interfaceService.update(input, worldMouse);
 
-        // 1. Проверяем глобальные условия тактического поражения (Game Over)
-        const powerNodes = this.buildings.filter(b => b.type === 'POWER');
+        // 2. ЗАМОРОЗКА МИРА: Если игра на паузе или бункеры уничтожены
+        if (this.isPaused || this.isGameOver) return;
+
+        // 3. УСЛОВИЯ ПОРАЖЕНИЯ БАЗЫ
+        const powerNodes = this.player.buildings.filter(b => b.type === 'POWER');
         const allPowerDestroyed = powerNodes.every(b => b.isDestroyed);
-        const allBuildingsDestroyed = this.buildings.every(b => b.isDestroyed);
+        const allBuildingsDestroyed = this.player.buildings.every(b => b.isDestroyed);
 
         if (allPowerDestroyed || allBuildingsDestroyed) {
             this.isGameOver = true;
             return;
         }
 
-        // 2. Пассивный тик зданий (Шахта генерирует ресурсы)
-        this.buildings.forEach(building => {
-            building.update(deltaTime, this.econContext);
-        });
+        // 4. СБРОС ТАКТИЧЕСКОЙ КАРТЫ ЦЕЛЕЙ ИГРОКА ПЕРЕД НАЧАЛОМ КАДРА
+        this.player.clearActiveTargets();
 
-        // 3. Обновление РЛС станций
-        this.radars.forEach(radar => {
-            if (radar.isTrackingMouse || (input.isMouseButtonDown(2) && this.selectedEntity === radar)) {
-                radar.setTargetDirection(worldMouse.x, worldMouse.y);
-            }
-            radar.rotate(deltaTime);
-            radar.scan(this.invaders);
-        });
+        // 5. ЗАПУСК ЦИКЛА ИГРОКА (Обнаружение РЛС -> Движение пушек ПВО -> Залпы лазеров)
+        this.player.update(deltaTime, this.invaders);
 
-        // 4. Движение камикадзе и обсчёт взрывов Suicide Strike
+        // 6. СИМУЛЯЦИЯ ДВИЖЕНИЯ И УПРАВЛЕНИЯ РОЕМ БПЛА-КАМИКАДЗЕ
         this.invaders.forEach(invader => {
             invader.updateVisibility(deltaTime);
             
-            // Проверка тарана бункеров в CollisionManager
-            let shouldRespawn = collisionManager.checkSuicideStrikes(invader, this.buildings);
+            // Перехват Suicide Strike коллизий о бункеры игрока
+            let shouldRespawn = collisionManager.checkSuicideStrikes(invader, this.player.buildings);
 
-            // Если дрон не долетел до зданий, но был ликвидирован лазерами ПВО
             if (!shouldRespawn && (invader.y > 1200 || invader.hp <= 0)) {
                 if (invader.hp <= 0) {
                     this.score++;
+                    
+                    // Погибший дрон передает координаты ПВО в глобальный разум роя
                     invader.attackers.forEach(turret => {
                         this.routeManager.reportHazard(turret);
-                        console.log(`[Радиосеть Роя]: Перехвачены координаты позиции ПВО: ${turret.name}`);
                     });
                 }
                 shouldRespawn = true;
             }
 
-            // Респавн и пересчёт веера Flight Plan по оставшимся целям
+            // Порционный пересчёт А* строго в момент респавна дрона наверх
             if (shouldRespawn) {
-                invader.attackers = new Array<SimpleTurret>();
+                invader.attackers = new Array();
                 invader.y = Math.floor(Math.random() * -200) - 40;
                 invader.x = invader.spawnPointX;
                 invader.hp = 100;
                 invader.visibilityTimer = 0;
                 invader.moveAngle = Math.PI / 2;
-                invader.waypoints = this.routeManager.generateFlightPlan(invader.spawnPointX, invader.y, this.buildings);
+                invader.waypoints = this.routeManager.generateFlightPlan(invader.spawnPointX, invader.y, this.player.buildings);
             } else {
-                invader.moveDown();
+                invader.moveDown(); // Спокойно скользит по путевым точкам из своей памяти
             }
-        });
-
-        // 5. Логика перезарядки и наведения ПВО
-        this.turrets.forEach(turret => {
-            turret.updateMovement(deltaTime);
-            turret.scan(this.invaders);
-            turret.attack(this.invaders, deltaTime);
         });
     }
 }

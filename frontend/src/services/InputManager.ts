@@ -14,6 +14,7 @@ export class InputManager {
     // Хранилища колбэков для разовых триггеров (Пауза, Покупка, Выбор)
     private keyPressListeners: Record<string, () => void> = {};
     private mouseClickListeners: Record<number, (x: number, y: number) => void> = {};
+    private mouseUpListeners: Record<number, (x: number, y: number) => void> = {};
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -77,6 +78,13 @@ export class InputManager {
     }
 
     /**
+     * НОВЫЙ МЕТОД: Подписка на разовое отпускание кнопки мыши (например, отпустить ПКМ)
+     */
+    public onMouseUp(button: number, callback: (x: number, y: number) => void): void {
+        this.mouseUpListeners[button] = callback;
+    }
+
+    /**
      * Инициализация мышиных слушателей (Координаты считываются строго относительно Canvas)
      */
     private initMouseListeners(): void {
@@ -109,6 +117,14 @@ export class InputManager {
 
         window.addEventListener('mouseup', (e: MouseEvent) => {
             this.mouseButtons[e.button] = false;
+
+            const rect = this.canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            if (this.mouseUpListeners[e.button]) {
+                this.mouseUpListeners[e.button](x, y);
+            }
         });
     }
 }

@@ -55,17 +55,30 @@ export class UIRenderer {
     /**
      * Отрисовка полупрозрачного силуэта-призрака будущей постройки с радиусами действия
      */
+ /**
+     * Отрисовка полупрозрачного силуэта-призрака будущей постройки с радиусами действия
+     */
     public drawGhostBuilding(type: string, x: number, y: number): void {
         this.ctx.save();
+        this.ctx.lineWidth = 1.5;
+
         if (type === 'RADAR') {
+            // 1. Рисуем конус радарной развёртки
             this.ctx.beginPath();
             this.ctx.arc(x, y, 180, -Math.PI/2 - Math.PI/4, -Math.PI/2 + Math.PI/4);
             this.ctx.fillStyle = 'rgba(56, 139, 253, 0.05)';
             this.ctx.fill();
             this.ctx.strokeStyle = '#58a6ff';
             this.ctx.stroke();
+
+            // ИСПРАВЛЕНО: Рисуем сам центральный квадратик корпуса РЛС (размер 20x20px, центрирован)
+            this.ctx.fillStyle = 'rgba(56, 139, 253, 0.3)'; // Полупрозрачный синий чертеж
             this.ctx.fillRect(x - 10, y - 10, 20, 20);
+            this.ctx.strokeStyle = '#58a6ff';
+            this.ctx.strokeRect(x - 10, y - 10, 20, 20);
+
         } else if (type === 'TURRET') {
+            // 1. Рисуем зоны поражения лазера ПВО
             this.ctx.beginPath();
             this.ctx.arc(x, y, 45, 0, Math.PI * 2);
             this.ctx.strokeStyle = 'rgba(57, 211, 83, 0.3)';
@@ -76,8 +89,13 @@ export class UIRenderer {
             this.ctx.strokeStyle = 'rgba(57, 211, 83, 0.2)';
             this.ctx.stroke();
 
+            // ИСПРАВЛЕНО: Рисуем центральный квадратик корпуса ПВО (размер 20x20px, центрирован)
+            this.ctx.fillStyle = 'rgba(57, 211, 83, 0.3)'; // Полупрозрачный зелёный чертеж
             this.ctx.fillRect(x - 10, y - 10, 20, 20);
+            this.ctx.strokeStyle = '#39d353';
+            this.ctx.strokeRect(x - 10, y - 10, 20, 20);
         }
+        
         this.ctx.restore();
     }
 

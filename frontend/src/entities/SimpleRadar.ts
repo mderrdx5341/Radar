@@ -1,125 +1,85 @@
 import { SimpleInvader } from './SimpleInvader';
+import { Player } from '../services/Player'; // Подключаем класс Player для отправки репортов
 
 export class SimpleRadar {
     public x: number;
     public y: number;
     public name: string;
+    
+    // Сектор обзора и углы вращения луча РЛС
+    public currentAngle: number = -Math.PI / 2;
+    public targetAngle: number = -Math.PI / 2;
     public visionRadius: number = 180;
-    public angleDir: number;            
-    public fov: number;                 
-    public scanLineAngle: number;       
-    private rotationSpeed: number;      
-    private rotationDirection: number = 1;
+    public rotationSpeed: number = 0.04;
+    
+    public isTrackingMouse: boolean = false;
 
-    public targetAngle: number;         
-    private turnSpeed: number = 0.003;  
-
-    // --- НОВОЕ: СОСТОЯНИЕ РУЧНОГО УДЕРЖАНИЯ СЕКТОРА ---
-    public isTrackingMouse: boolean = false; 
-
-    constructor(
-        x: number, 
-        y: number, 
-        name: string = 'РЛС-Альфа',
-        angleDir: number = -Math.PI / 2, 
-        fovDegrees: number = 90, 
-        speed: number = 0.0025
-    ) {
+    constructor(x: number, y: number, name: string) {
         this.x = x;
         this.y = y;
         this.name = name;
-        this.angleDir = angleDir;
-        this.scanLineAngle = angleDir;  
-        this.targetAngle = angleDir; 
-        this.fov = fovDegrees * Math.PI / 180;
-        this.rotationSpeed = speed;
     }
 
-    /**
-     * Включает режим следования за курсором
-     */
     public startTracking(): void {
         this.isTrackingMouse = true;
     }
 
-    /**
-     * Выключает режим следования за курсором (фиксация направления)
-     */
     public stopTracking(): void {
         this.isTrackingMouse = false;
     }
 
-    public setTargetDirection(mouseX: number, mouseY: number): void {
-        this.targetAngle = Math.atan2(mouseY - this.y, mouseX - this.x);
+    /**
+     * Поворот луча радара к целевому направлению патрулирования
+     */
+    public setTargetDirection(worldX: number, worldY: number): void {
+        const dx = worldX - this.x;
+        const dy = worldY - this.y;
+        this.targetAngle = Math.atan2(dy, dx);
     }
 
+    /**
+     * Математический поворот луча за кадр анимации
+     */
     public rotate(deltaTime: number): void {
-        if (deltaTime <= 0) return;
-
-        // ПЛАВНЫЙ ПОВОРОТ: сектор крутится, только если угол не совпадает с целью
-        if (this.angleDir !== this.targetAngle) {
-            let angleDiff = this.targetAngle - this.angleDir;
-            while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-            while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-
-            const step = this.turnSpeed * deltaTime;
-            if (Math.abs(angleDiff) <= step) {
-                this.angleDir = this.targetAngle;
-            } else {
-                this.angleDir += Math.sign(angleDiff) * step;
-            }
-        }
-
-        // ВРАЩЕНИЕ ВНУТРЕННЕГО ЛУЧА
-        this.scanLineAngle += this.rotationSpeed * deltaTime * this.rotationDirection;
-        let diff = this.scanLineAngle - this.angleDir;
-
+        let diff = this.targetAngle - this.currentAngle;
+        
+        // Нормализация угла в диапазон [-PI, PI]
         while (diff < -Math.PI) diff += Math.PI * 2;
         while (diff > Math.PI) diff -= Math.PI * 2;
 
-        const halfFov = this.fov / 2;
-        if (Math.abs(diff) >= halfFov) {
-            this.rotationDirection *= -1;
-            this.scanLineAngle = this.angleDir + halfFov * Math.sign(diff);
+        const maxStep = this.rotationSpeed * (deltaTime / 16.66);
+        if (Math.abs(diff) <= maxStep) {
+            this.currentAngle = this.targetAngle;
+        } else {
+            this.currentAngle += Math.sign(diff) * maxStep;
         }
     }
+
     /**
-     * Проверяет, находится ли враг внутри физических границ 90-градусного сектора радара
+     * ИСПРАВЛЕНО: Радар сканирует небо и регистрирует обнаруженные цели напрямую у Player
      */
-    public isInsideSector(invader: SimpleInvader): boolean {
-        const dx = invader.x - this.x;
-        const dy = invader.y - this.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        // Если дальше радиуса обзора — он точно не в секторе
-        if (distance > this.visionRadius) return false;
-
-        const angleToInvader = Math.atan2(dy, dx);
-        let sectorDiff = angleToInvader - this.angleDir;
-        
-        while (sectorDiff < -Math.PI) sectorDiff += Math.PI * 2;
-        while (sectorDiff > Math.PI) sectorDiff -= Math.PI * 2;
-
-        return Math.abs(sectorDiff) <= this.fov / 2;
-    }
-
-    public scan(invaders: SimpleInvader[]): void {
+    public scan(invaders: Array<SimpleInvader>, player: Player): void {
         invaders.forEach(invader => {
-            if (invader.hp <= 0) return;
+            const dx = invader.x - this.x;
+            const dy = invader.y - this.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
 
-            // Используем наш новый метод для проверки зоны
-            if (this.isInsideSector(invader)) {
-                const dx = invader.x - this.x;
-                const dy = invader.y - this.y;
+            // Проверяем, входит ли дрон в радиус действия РЛС
+            if (distance <= this.visionRadius) {
                 const angleToInvader = Math.atan2(dy, dx);
+                let angleDiff = angleToInvader - this.currentAngle;
 
-                let beamDiff = angleToInvader - this.scanLineAngle;
-                while (beamDiff < -Math.PI) beamDiff += Math.PI * 2;
-                while (beamDiff > Math.PI) beamDiff -= Math.PI * 2;
+                // Нормализация разности углов
+                while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
 
-                const beamThickness = 0.08;
-                if (Math.abs(beamDiff) <= beamThickness) {
-                    invader.visibilityTimer = 1500; 
+                // Сектор раскрытия луча равен 45 градусам (Math.PI / 4)
+                if (Math.abs(angleDiff) <= Math.PI / 4) {
+                    // Подсвечиваем дрон (взводим таймер видимости)
+                    invader.visibilityTimer = 1000; 
+
+                    // РЕПОРТ В ШТАБ: Мгновенно заносим БПЛА в тактический список целей игрока!
+                    player.registerDetectedTarget(invader);
                 }
             }
         });
