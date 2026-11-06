@@ -77,6 +77,7 @@ export class Player {
     public update(deltaTime: number, allInvaders: Array<SimpleInvader>): void {
         // 1. Радары сканируют небо
         this.radars.forEach(radar => {
+            radar.rotate(deltaTime);
             radar.scan(allInvaders, this); 
         });
 

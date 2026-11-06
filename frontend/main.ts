@@ -1,12 +1,8 @@
-import { SimpleRadar, SimpleTurret, RouteManager } from '@/entities';
-import { PlacementManager } from '@/entities/PlacementManager';
 import { CanvasRenderer } from '@/render/CanvasRenderer';
 import { InputManager, CameraSystem, CollisionManager, GameState } from '@/services';
 
 const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
 const renderer = new CanvasRenderer('gameCanvas');
-const placement = new PlacementManager();
-const routeManager = new RouteManager();
 
 const input = new InputManager(canvas);
 const collisionManager = new CollisionManager();
@@ -18,7 +14,9 @@ canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
 const camera = new CameraSystem(WORLD_WIDTH, WORLD_HEIGHT, canvas.width, canvas.height);
-const state = new GameState(routeManager);
+
+// Создаём GameState, который сам развернёт обе фракции: Player и EnemySwarm!
+const state = new GameState();
 
 window.addEventListener('resize', () => {
     canvas.width = window.innerWidth;
@@ -26,7 +24,7 @@ window.addEventListener('resize', () => {
     camera.clamp(canvas.width, canvas.height);
 });
 
-// --- ПОДПИСКИ НА СОБЫТИЯ ВВОДА ЧЕРЕЗ INPUTMANAGER ---
+// --- ПОДПИСКИ НА СОБЫТИЯ ВВОДА ЧЕРЕЗ INPUTMANAGER ЧЕРЕЗ INTERFACESERVICE ---
 
 input.onKeyPress('Space', () => {
     if (!state.isGameOver) state.isPaused = !state.isPaused;
@@ -40,7 +38,9 @@ input.onMouseClick(2, (screenX, screenY) => {
     state.interfaceService.handleRightClick(screenX, screenY, camera, state.player);
 });
 
-const selectedEntity = state.interfaceService.activeController?.getEntity() || null;
+input.onMouseUp(2, () => {
+    state.interfaceService.handleRightMouseUp();
+});
 
 let lastTime = performance.now();
 
@@ -53,21 +53,11 @@ function gameTick(timestamp: number) {
 
     const worldMouse = camera.screenToWorld(mousePos.x, mousePos.y);
 
-    state.interfaceService.update(input, worldMouse);
-    // Запускаем центральный апдейт симуляции
+    // Запускаем единый и лаконичный тик симуляции мира
     state.update(deltaTime, input, collisionManager, worldMouse);
-
-        // ИСПРАВЛЕНО: Вытаскиваем текущий живой физический объект из активного контроллера
-    const selectedEntity = state.interfaceService.activeController 
-        ? state.interfaceService.activeController.getEntity() 
-        : null;
     
-    // Передаем массивы юнитов из объекта state.player в рендерер для сборки кадра
-    renderer.render(
-        state.invaders, state.player.radars, state.player.turrets, selectedEntity, // Передаем selectedEntity
-        state.player.placement.currentBuildType, worldMouse.x, worldMouse.y, state.score,
-        routeManager.getDiscoveredTurrets(), camera.x, camera.y, state.isPaused, state.player.buildings, state.isGameOver
-    );
+    // ИСПРАВЛЕНО: Кристально чистая, послойная сборка тактического кадра в 3 аргумента!
+    renderer.render(state, camera, state.interfaceService);
 
     requestAnimationFrame(gameTick);
 }

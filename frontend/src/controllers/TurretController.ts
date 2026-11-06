@@ -10,11 +10,11 @@ export class TurretController extends EntityController {
     }
 
     /**
-     * Приказ на движение ПВО по ПКМ
+     * Приказ на передислокацию по ПКМ
      */
-    public handleRightClick = (worldX: number, worldY: number): void => {
+    public handleRightClick(worldX: number, worldY: number): void {
         if (this.entity) {
             this.entity.moveTo(worldX, worldY);
         }
-    };
+    }
 }

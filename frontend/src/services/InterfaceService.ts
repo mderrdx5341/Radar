@@ -8,15 +8,21 @@ export class InterfaceService {
     // Полиморфная ссылка на активный низкоуровневый контроллер (РЛС или ПВО)
     public activeController: EntityController | null = null;
 
+    // СВОЙ ВНУТРЕННИЙ ФЛАГ УДЕРЖАНИЯ КНОПКИ (Защита от сбоев InputManager)
+    private isRightMouseDown: boolean = false;
+
+    public worldMouse: { x: number; y: number } = { x: 0, y: 0 };
+
     constructor() {
         this.activeController = null;
+        this.isRightMouseDown = false;
+        this.worldMouse = { x: 0, y: 0 };
     }
 
     /**
      * Центральный обработчик Левой Кнопки Мыши (ЛКМ)
      */
     public handleLeftClick(screenX: number, screenY: number, canvasHeight: number, camera: CameraSystem, player: Player, state: GameState): void {
-        // 1. Слой HUD-интерфейса панели магазина (высота 60px от нижнего края экрана)
         if (screenY > canvasHeight - 60) {
             if (screenX >= 20 && screenX <= 160) player.placement.startBuilding('RADAR');
             if (screenX >= 180 && screenX <= 320) player.placement.startBuilding('TURRET');
@@ -26,21 +32,16 @@ export class InterfaceService {
 
         const worldPos = camera.screenToWorld(screenX, screenY);
 
-        // 2. Слой бесплатного строительства в песочнице
         if (player.placement.currentBuildType) {
             player.tryPlaceBuilding(worldPos.x, worldPos.y);
             return;
         }
 
-        // 3. Слой тактического выбора объектов на поле боя
-        // Ищем клик с небольшим запасом радиуса (20px), чтобы по пушкам было легко кликать
         const clickedRadar = player.radars.find(r => Math.sqrt((r.x - worldPos.x) ** 2 + (r.y - worldPos.y) ** 2) <= 20);
         const clickedTurret = player.turrets.find(t => Math.sqrt((t.x - worldPos.x) ** 2 + (t.y - worldPos.y) ** 2) <= 20);
 
-        // Сбрасываем старый выбор перед активацией нового
         this.deselectCurrentEntity();
 
-        // ИСПРАВЛЕНО: Создаем контроллеры и жестко привязываем к ним выбранные сущности
         if (clickedRadar) {
             this.activeController = new RadarController(clickedRadar);
             console.log(`[Интерфейс]: Выбрана радарная станция ${clickedRadar.name}`);
@@ -51,13 +52,16 @@ export class InterfaceService {
     }
 
     /**
-     * Центральный обработчик Правой Кнопки Мыши (ПКМ)
+     * Центральный обработчик Правой Кнопки Мыши (ПКМ) — НАЖАТИЕ КНОПКИ
      */
     public handleRightClick(screenX: number, screenY: number, camera: CameraSystem, player: Player): void {
         if (player.placement.currentBuildType) {
             player.placement.cancelBuilding();
             return;
         }
+
+        // Включаем внутренний флаг удержания: игрок прямо сейчас зажал ПКМ!
+        this.isRightMouseDown = true;
 
         const worldPos = camera.screenToWorld(screenX, screenY);
 
@@ -66,11 +70,24 @@ export class InterfaceService {
         }
     }
 
+    /**
+     * НОВЫЙ МЕТОД: Сигнал о том, что игрок физически ОТПУСТИЛ правую кнопку мыши
+     */
+    public handleRightMouseUp(): void {
+        // Гасим флаг удержания
+        this.isRightMouseDown = false;
+        console.log("[Интерфейс]: ПКМ отпущена, ручное ведение прекращено.");
+    }
+
+    /**
+     * Ежекадровый апдейт движения мыши внутри gameTick
+     */
     public update(input: InputManager, worldMouse: { x: number, y: number }): void {
-        const isMouseDown = input.isMouseButtonDown(2); 
+        this.worldMouse = worldMouse;
         
         if (this.activeController) {
-            this.activeController.handleMouseMove(worldMouse.x, worldMouse.y, isMouseDown);
+            // Передаем наш собственный, гарантированный флаг зажатия кнопки
+            this.activeController.handleMouseMove(worldMouse.x, worldMouse.y, this.isRightMouseDown);
         }
     }
 
@@ -79,5 +96,6 @@ export class InterfaceService {
             this.activeController.onDeselect();
         }
         this.activeController = null;
+        this.isRightMouseDown = false;
     }
 }
