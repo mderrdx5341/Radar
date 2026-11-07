@@ -1,7 +1,6 @@
-import { SimpleTurret } from '../entities/SimpleTurret';
-import { Waypoint } from '../entities/RouteManager';
+import { DiscoveredHazard, Waypoint } from '../entities/RouteManager';
 
-interface PathfinderNode {
+export interface PathfinderNode {
     x: number;
     y: number;
     parent: PathfinderNode | null;
@@ -10,148 +9,172 @@ interface PathfinderNode {
 }
 
 export class TangentPathfinder {
-    /**
-     * Дальноходный волновой навигатор, оптимизированный под геометрию карты 1600x1200
-     */
-    public findShortestPath(startX: number, startY: number, turrets: Array<SimpleTurret>, targetX: number, targetY: number): Array<Waypoint> {
-        // Радиус турели 70 + корпус дрона 6 + 14 пикселей тактического запаса упреждения
-        const criticalRadius = 70 + 6 + 14; 
+    // Состояние текущей сессии поиска пути, сохраняющееся между кадрами
+    public openList: Array<PathfinderNode> = new Array<PathfinderNode>();
+    public closedSet: Set<string> = new Set();
+    public endNode: PathfinderNode | null = null;
+    
+    // Параметры текущей задачи
+    private startX: number = 0;
+    private startY: number = 0;
+    private targetX: number = 0;
+    private targetY: number = 0;
+    private gridStep: number = 20;
 
-        const openList: Array<PathfinderNode> = new Array<PathfinderNode>();
-        const closedSet: Set<string> = new Set();
+    // Направления движения (4 ортогональных вектора)
+    private readonly dx = [0, -20, 20, 0];
+    private readonly dy = [20, 0, 0, -20];
+
+    /**
+     * Инициализация новой сессии поиска пути (вызывается при изменении карты ПВО)
+     */
+    public startNewSearch(startX: number, startY: number, targetX: number, targetY: number): void {
+        this.openList = new Array<PathfinderNode>();
+        this.closedSet.clear();
+        this.endNode = null;
+
+        this.startX = startX;
+        this.startY = startY;
+        
+        // Выравниваем финиш по сетке ячеек 20px
+        this.targetX = Math.round(targetX / this.gridStep) * this.gridStep;
+        this.targetY = Math.round(targetY / this.gridStep) * this.gridStep;
+
+        const sX = Math.round(startX / this.gridStep) * this.gridStep;
+        const sY = Math.round(startY / this.gridStep) * this.gridStep;
 
         const startNode: PathfinderNode = {
-            x: Math.round(startX),
-            y: Math.round(startY),
+            x: sX,
+            y: sY,
             parent: null,
             g: 0,
-            f: Math.sqrt((targetX - startX) ** 2 + (targetY - startY) ** 2)
+            f: Math.abs(this.targetX - sX) + Math.abs(this.targetY - sY)
         };
-        openList.push(startNode);
+        this.openList.push(startNode);
+    }
 
-        let endNode: PathfinderNode | null = null;
-        let iterations = 0;
-        
-        // Оптимальный шаг дискретизации для большой карты
-        const gridStep = 25;
+    /**
+     * ПОКАДРОВЫЙ ШАГ ВЫЧИСЛЕНИЙ (Тайм-слайсинг)
+     * Выполняет ровно maxSteps (300) шагов и ставит алгоритм на паузу
+     * @returns true, если путь успешно найден или поиск полностью зашел в тупик
+     */
+    public searchStep(maxSteps: number, hazards: Array<DiscoveredHazard>): boolean {
+        if (this.openList.length === 0 || this.endNode) return true;
 
-        while (openList.length > 0 && iterations < 7000) {
-            iterations++;
-            
-            openList.sort((a, b) => a.f - b.f);
-            const curr = openList.shift()!;
+        let stepsDone = 0;
 
-            const key = `${Math.round(curr.x / gridStep)},${Math.round(curr.y / gridStep)}`;
-            if (closedSet.has(key)) continue;
-            closedSet.add(key);
+        while (this.openList.length > 0 && stepsDone < maxSteps) {
+            stepsDone++;
 
-            // Если успешно подобрались к финишу бункера по вертикали
-            if (curr.y >= targetY - 30) {
-                endNode = curr;
-                break;
+            // Линейная выборка лучшего узла O(N) вместо тяжелой сортировки
+            let bestIdx = 0;
+            for (let i = 1; i < this.openList.length; i++) {
+                if (this.openList[i].f < this.openList[bestIdx].f) {
+                    bestIdx = i;
+                }
             }
 
-            // МАСШТАБНЫЙ КРИТИЧЕСКИЙ ФИКС: Увеличиваем шаг продвижения вниз (dy = 35) 
-            // и даем мощный, широкий веер боковых маневров (dx до 90px по горизонтали).
-            // Это открывает лучу возможность делать резкие развороты на фланги и уходить от ПВО.
-            const dx = Array.of(-90, -45, -15, 0, 45, 90);
-            const dy = 35; 
+            const curr = this.openList.splice(bestIdx, 1)[0];
 
-            dx.forEach(offset_x => {
-                const nextX = curr.x + offset_x;
-                const nextY = curr.y + dy;
+            const key = `${curr.x},${curr.y}`;
+            if (this.closedSet.has(key)) continue;
+            this.closedSet.add(key);
 
-                if (nextX < 20 || nextX > 1580) return;
+            // Условие финиша
+            if (Math.abs(curr.x - this.targetX) <= this.gridStep && Math.abs(curr.y - this.targetY) <= this.gridStep) {
+                this.endNode = curr;
+                return true;
+            }
 
-                // Жесткая проверка входа в зону поражения известных ПВО ПВО
+            for (let k = 0; k < this.dx.length; k++) {
+                const nextX = curr.x + this.dx[k];
+                const nextY = curr.y + this.dy[k];
+
+                // Границы маневров за экраном
+                if (nextX < -200 || nextX > 1800 || nextY > 1250 || nextY < -100) continue;
+
                 let hitWall = false;
-                turrets.forEach(turret => {
-                    const distSq = (nextX - turret.x) ** 2 + (nextY - turret.y) ** 2;
-                    if (distSq < criticalRadius * criticalRadius) {
+                for (let t = 0; t < hazards.length; t++) {
+                    const hazard = hazards[t];
+                    const tdx = nextX - hazard.x;
+                    const tdy = nextY - hazard.y;
+                    if ((tdx * tdx + tdy * tdy) < (hazard.radius * hazard.radius)) {
                         hitWall = true;
+                        break;
                     }
-                });
+                }
 
-                if (hitWall) return;
+                if (hitWall) continue;
 
-                const stepDist = Math.sqrt(offset_x * offset_x + dy * dy);
-                const g = curr.g + stepDist;
-                
-                // Честная тригонометрическая оценка до координат целевого здания
-                const h = Math.sqrt((targetX - nextX) ** 2 + (targetY - nextY) ** 2);
-                const f = g + h;
+                const g = curr.g + this.gridStep;
+                const h = Math.abs(this.targetX - nextX) + Math.abs(this.targetY - nextY);
 
-                openList.push({ x: nextX, y: nextY, parent: curr, g, f });
-            });
+                this.openList.push({ x: nextX, y: nextY, parent: curr, g, f: g + h });
+            }
         }
 
+        // Если openList опустел — поиск завершен (путь найти невозможно)
+        // Если шаги maxSteps кончились, но openList полон — возвращаем false (продолжим на следующем кадре)
+        return this.openList.length === 0 || this.endNode !== null;
+    }
+
+    /**
+     * Сборка и нитевое сглаживание финального пути (вызывается один раз при успехе)
+     */
+    public compileFinalPath(hazards: Array<DiscoveredHazard>): Array<Waypoint> {
         const rawPath: Array<Waypoint> = new Array<Waypoint>();
-        if (endNode) {
-            let n: PathfinderNode | null = endNode;
+        
+        if (this.endNode) {
+            let n: PathfinderNode | null = this.endNode;
             while (n !== null) {
                 rawPath.push({ x: n.x, y: n.y });
                 n = n.parent;
             }
             rawPath.reverse();
         } else {
-            // Если волновой алгоритм зажат пушками ПВО, выдаем прямой тактический рельс до цели
-            rawPath.push({ x: startX, y: startY });
-            rawPath.push({ x: targetX, y: targetY });
+            rawPath.push({ x: this.startX, y: this.startY });
+            rawPath.push({ x: this.targetX, y: this.targetY });
+            return rawPath;
         }
-        
-        rawPath.push({ x: targetX, y: targetY });
 
-        // --- АЛГОРИТМ НАТЯЖЕНИЯ НИТИ (PATH SMOOTHING) ---
+        rawPath.push({ x: this.targetX, y: this.targetY });
+
+        // Сглаживание String Pulling
         const optimizedPath: Array<Waypoint> = new Array<Waypoint>();
         if (rawPath.length > 0) {
-            const firstElement = rawPath.at(0);
-            if (firstElement) {
-                optimizedPath.push(firstElement);
-            }
-            
+            optimizedPath.push(rawPath[0]);
             let currIdx = 0;
+            const lineRadiusSq = (70 + 4) * (70 + 4);
+
             while (currIdx < rawPath.length - 1) {
                 let nextIdx = rawPath.length - 1;
-                
                 while (nextIdx > currIdx + 1) {
-                    const p1 = rawPath.at(currIdx);
-                    const p2 = rawPath.at(nextIdx);
-                    
-                    // Проверяем отрезок с запасом радиуса, чтобы нить не натягивалась сквозь ПВО ПВО
-                    if (p1 && p2 && this.isLineSafe(p1, p2, turrets, criticalRadius - 5)) {
-                        break; 
+                    if (this.isLineSafe(rawPath[currIdx], rawPath[nextIdx], hazards, lineRadiusSq)) {
+                        break;
                     }
                     nextIdx--;
                 }
-                
-                const nextElement = rawPath.at(nextIdx);
-                if (nextElement) {
-                    optimizedPath.push(nextElement);
-                }
+                optimizedPath.push(rawPath[nextIdx]);
                 currIdx = nextIdx;
             }
         }
-
         return optimizedPath;
     }
 
-    private isLineSafe(p1: Waypoint, p2: Waypoint, turrets: Array<SimpleTurret>, radius: number): boolean {
-        // Высокая плотность сканирования отрезка нити (18 точек контроля)
-        for (let i = 1; i <= 18; i++) {
-            const t = i / 19;
+    private isLineSafe(p1: Waypoint, p2: Waypoint, hazards: Array<DiscoveredHazard>, radiusSq: number): boolean {
+        const samples = 14;
+        for (let i = 1; i <= samples; i++) {
+            const t = i / (samples + 1);
             const checkX = p1.x + (p2.x - p1.x) * t;
             const checkY = p1.y + (p2.y - p1.y) * t;
 
-            let isSafe = true;
-            turrets.forEach(turret => {
-                const distSq = (checkX - turret.x) ** 2 + (checkY - turret.y) ** 2;
-                if (distSq < radius * radius) {
-                    isSafe = false;
-                }
-            });
-            
-            if (!isSafe) return false;
+            for (let g = 0; g < hazards.length; g++) {
+                const hazard = hazards[g];
+                const tdx = checkX - hazard.x;
+                const tdy = checkY - hazard.y;
+                if ((tdx * tdx + tdy * tdy) < radiusSq) return false;
+            }
         }
-        return true; 
+        return true;
     }
 }

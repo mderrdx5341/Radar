@@ -4,9 +4,11 @@ import { UIRenderer } from './UIRenderer';
 import { RadarRenderer } from './RadarRenderer';
 import { TurretRenderer } from './TurretRenderer';
 import { InvaderRenderer } from './InvaderRenderer';
+// Импортируем три наших расщеплённых графических компонента построек базы
 import { PowerNodeRenderer } from './PowerNodeRenderer';
 import { RepairBayRenderer } from './RepairBayRenderer';
 import { ResourceHarvesterRenderer } from './ResourceHarvesterRenderer';
+import { DebugRenderer } from './DebugRenderer'; 
 
 export class CanvasRenderer {
     private canvas: HTMLCanvasElement;
@@ -19,9 +21,12 @@ export class CanvasRenderer {
     private turretRenderer: TurretRenderer;
     private invaderRenderer: InvaderRenderer;
     
+    // Под-службы визуализации инфраструктуры базы
     private powerNodeRenderer: PowerNodeRenderer;
     private repairBayRenderer: RepairBayRenderer;
     private resourceHarvesterRenderer: ResourceHarvesterRenderer;
+    
+    private debugRenderer: DebugRenderer;
 
     constructor(canvasId: string) {
         this.canvas = document.getElementById(canvasId) as HTMLCanvasElement;
@@ -35,9 +40,12 @@ export class CanvasRenderer {
         this.turretRenderer = new TurretRenderer(this.ctx);
         this.invaderRenderer = new InvaderRenderer(this.ctx);
 
+        // ИСПРАВЛЕНО: Жёстко инициализируем все три рендерера зданий в конструкторе!
         this.powerNodeRenderer = new PowerNodeRenderer(this.ctx);
         this.repairBayRenderer = new RepairBayRenderer(this.ctx);
         this.resourceHarvesterRenderer = new ResourceHarvesterRenderer(this.ctx);
+        
+        this.debugRenderer = new DebugRenderer(this.ctx);
 
         this.warmupGraphics();
     }
@@ -49,32 +57,38 @@ export class CanvasRenderer {
         this.uiRenderer.drawSelectedNameUI(1280, 'WARMUP');
         this.ctx.restore();
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        console.log('[Графическое Ядро]: Сборка слоёв переведена на объектный контракт.');
+        console.log('[Графическое Ядро]: Полное послойное расщепление компонентов базы завершено успешно.');
     }
 
     /**
-     * СЖАТЫЙ КОНВЕЙЕР СБОРКИ КАДРА
-     * Принимает всего 3 комплексных системных объекта вместо 14 параметров!
+     * ГЛАВНЫЙ СЖАТЫЙ КОНВЕЙЕР СБОРКИ КАДРА ПО КЛАВИШЕ ОТЛАДКИ KEYK
      */
     public render(state: GameState, camera: CameraSystem, interfaceService: InterfaceService): void {
         const scrWidth = this.canvas.width;
         const scrHeight = this.canvas.height;
 
-        // 1. Очистка экрана (Слой неба / Задний фон)
         this.environmentRenderer.clearScreen(scrWidth, scrHeight);
 
-        // 2. Входим в матрицу мировых координат тактической карты (Камера)
         this.ctx.save();
         this.ctx.translate(-camera.x, -camera.y);
 
-        // Отрисовка координатной сетки земли
         this.environmentRenderer.drawGrid(1600, 1200);
         this.environmentRenderer.drawBasePerimeter(1600);
         
-        // Извлекаем выбранную сущность из абстрактного контроллера для отрисовки рамок
         const selectedEntity = interfaceService.activeController?.getEntity() || null;
 
-        // СЛОЙ 1: ИНФРАСТРУКТУРА БАЗЫ (Извлекаем из state.player)
+        // СЛОЙ ОТЛАДКИ: Если активирован дебаг-режим (по клавише K), рендерим закрашенные квадраты и пути БПЛА
+        if (state.isDebugMode || state.isWaveDebugMode) {
+            this.debugRenderer.draw(
+                state.enemySwarm.invaders, 
+                state.enemySwarm.routeManager.getDiscoveredHazards(),
+                state.enemySwarm.spawnNodes,
+                state.isDebugMode,          // Передаем флаг кнопки K
+                state.isWaveDebugMode       // Передаем флаг кнопки L
+            );
+        }
+
+        // СЛОЙ 1: ИНФРАСТРУКТУРА БАЗЫ (Рендерится поштучно в зависимости от типа бункера)
         state.player.buildings.forEach(building => {
             if (building.type === 'POWER') this.powerNodeRenderer.draw(building);
             else if (building.type === 'REPAIR') this.repairBayRenderer.draw(building);
@@ -91,22 +105,19 @@ export class CanvasRenderer {
             this.turretRenderer.draw(turret, selectedEntity);
         });
         
-        // СЛОЙ 4: ВРАЖЕСКИЙ РОЙ КАМИКАДЗЕ (Извлекаем напрямую из фракции state.enemySwarm!)
+        // СЛОЙ 4: ВРАЖЕСКИЙ РОЙ КАМИКАДЗЕ
         this.invaderRenderer.drawAll(state.enemySwarm.invaders);
 
-        // Если активен режим чертежа — рисуем полупрозрачный призрак из данных interfaceService
-        const buildType = state.player.placement.currentBuildType;
-        if (buildType && !state.isGameOver) {
+        if (state.player.placement.currentBuildType && !state.isGameOver) {
             this.uiRenderer.drawGhostBuilding(
-                buildType, 
+                state.player.placement.currentBuildType, 
                 interfaceService.worldMouse.x, 
                 interfaceService.worldMouse.y
             );
         }
 
-        this.ctx.restore(); // Выходим к плоскости экрана
+        this.ctx.restore();
 
-        // 3. ВЕРХНИЙ СЛОЙ ЭКРАННОГО ИНТЕРФЕЙСА HUD
         this.uiRenderer.drawShopUI(scrWidth, scrHeight, state.isPaused && !state.isGameOver);
 
         if (selectedEntity) {
@@ -115,7 +126,14 @@ export class CanvasRenderer {
 
         this.uiRenderer.drawScoreUI(state.score);
 
-        // Оверлей экрана поражения
+        // Индикатор отладки на экране HUD по вашей кнопке K
+        if (state.isDebugMode) {
+            this.ctx.fillStyle = '#39d353';
+            this.ctx.font = 'bold 12px monospace';
+            this.ctx.textAlign = 'left';
+            this.ctx.fillText(' СИСТЕМА ДЕБАГА ИИ: СЕТКА А* АКТИВНА (КЛАВИША K) ', 20, 30);
+        }
+
         if (state.isGameOver) {
             const powerNodes = state.player.buildings.filter(b => b.type === 'POWER');
             const allPowerDestroyed = powerNodes.every(b => b.isDestroyed);
@@ -125,6 +143,13 @@ export class CanvasRenderer {
                 reason = 'Критический сбой: Энергоблок уничтожен. Оборона обесточена.';
             }
             this.uiRenderer.drawGameOverOverlay(scrWidth, scrHeight, reason);
+        }
+
+        if (state.isWaveDebugMode) {
+            this.ctx.fillStyle = '#f2c744';
+            this.ctx.font = 'bold 12px monospace';
+            this.ctx.textAlign = 'left';
+            this.ctx.fillText(' ПОКАДРОВЫЙ АНАЛИЗ ФРОНТА А* АКТИВЕН (КЛАВИША L) ', 20, 50);
         }
     }
 }

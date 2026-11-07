@@ -15,7 +15,7 @@ canvas.height = window.innerHeight;
 
 const camera = new CameraSystem(WORLD_WIDTH, WORLD_HEIGHT, canvas.width, canvas.height);
 
-// Создаём GameState, который сам развернёт обе фракции: Player и EnemySwarm!
+// Создаём GameState (RouteManager больше не передаём, он внутри EnemySwarm!)
 const state = new GameState();
 
 window.addEventListener('resize', () => {
@@ -24,10 +24,18 @@ window.addEventListener('resize', () => {
     camera.clamp(canvas.width, canvas.height);
 });
 
-// --- ПОДПИСКИ НА СОБЫТИЯ ВВОДА ЧЕРЕЗ INPUTMANAGER ЧЕРЕЗ INTERFACESERVICE ---
+// --- ПОДПИСКИ НА СОБЫТИЯ ВВОДА ---
 
 input.onKeyPress('Space', () => {
     if (!state.isGameOver) state.isPaused = !state.isPaused;
+});
+
+input.onKeyPress('KeyK', () => {
+    state.toggleDebugMode();
+});
+
+input.onKeyPress('KeyL', () => {
+    state.toggleWaveDebugMode();
 });
 
 input.onMouseClick(0, (screenX, screenY) => {
@@ -53,10 +61,15 @@ function gameTick(timestamp: number) {
 
     const worldMouse = camera.screenToWorld(mousePos.x, mousePos.y);
 
-    // Запускаем единый и лаконичный тик симуляции мира
+    state.interfaceService.update(input, worldMouse);
     state.update(deltaTime, input, collisionManager, worldMouse);
     
-    // ИСПРАВЛЕНО: Кристально чистая, послойная сборка тактического кадра в 3 аргумента!
+    // Извлекаем выбранную сущность
+    const selectedEntity = state.interfaceService.activeController 
+        ? state.interfaceService.activeController.getEntity() 
+        : null;
+
+    // ИСПРАВЛЕНО: Рендерер берет вскрытые пушки прямо из единого центра enemySwarm!
     renderer.render(state, camera, state.interfaceService);
 
     requestAnimationFrame(gameTick);

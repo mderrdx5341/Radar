@@ -84,15 +84,11 @@ export class SimpleTurret {
         }
     }
 
-   /**
-     * Интегрированная боевая фаза: Автономное обнаружение, упреждение и ведение огня
+       /**
+     * Боевая фаза: Сверхскоростной поиск цели без тригонометрических перегрузок CPU
      */
     public attack(visibleTargets: Array<SimpleInvader>, deltaTime: number): void {
-        // Нам нужен доступ к объекту игрока для регистрации автономно обнаруженных целей.
-        // Чтобы не менять сигнатуру вызова во всем проекте, мы можем безопасно получить 
-        // доступ ко всем invaders на карте, так как метод принимает visibleTargets (или общую базу роя)
-
-        // 1. ПРОВЕРКА ПОТЕРИ ИЛИ УНИЧТОЖЕНИЯ ТЕКУЩЕЙ ЦЕЛИ
+        // 1. ПРОВЕРКА ПОТЕРЯНОЙ ИЛИ СБИТОЙ ЦЕЛИ
         if (this.currentTarget && (this.currentTarget.hp <= 0 || !this.currentTarget.isVisible)) {
             this.currentTarget = null;
         }
@@ -104,39 +100,48 @@ export class SimpleTurret {
             }
         }
 
-        // 2. АВТОНОМНОЕ СКАНКРОВАНИЕ И ЗАХВАТ ЦЕЛИ (Собственный круговой радар ПВО)
-        // ВАЖНО: Турель перебирает visibleTargets для поиска целей в конусе, 
-        // но если дрон подлетает вплотную (45px), она сама взводит его видимость!
+        // 2. ИСПРАВЛЕНО (ЗАЩИТА ОТ ФРИЗОВ): Быстрый ленивый захват цели
         if (!this.currentTarget) {
             let selectedInvader: SimpleInvader | null = null;
             let closestDist = Infinity;
 
-            visibleTargets.forEach(invader => {
+            for (let i = 0; i < visibleTargets.length; i++) {
+                const invader = visibleTargets[i];
+                if (invader.hp <= 0) continue;
+
+                // БЫСТРЫЙ ФИЛЬТР: Сначала проверяем грубое расстояние по осям (AABB), без Math.sqrt!
                 const dx = invader.x - this.x;
                 const dy = invader.y - this.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-
-                // ЛОГИКА АВТОНОМНОГО ОБНАРУЖЕНИЯ: Внутренний круговой радиус (45px)
-                // Если дрон зашел в слепую зону, ПВО сама подсвечивает его в тумане войны!
-                const inBlindZone = dist <= this.visionRadius;
-                if (inBlindZone && invader.hp > 0) {
-                    invader.visibilityTimer = 1000; // Взводим видимость БПЛА автономно!
+                if (Math.abs(dx) > this.attackRange || Math.abs(dy) > this.attackRange) {
+                    continue; // Дрон слишком далеко, процессор даже не будет считать для него тригонометрию!
                 }
 
-                // Логика конуса обстрела (70px, раскрытие 45 градусов)
-                let angleToInvader = Math.atan2(dy, dx);
-                let angleDiff = angleToInvader - this.currentAngle;
-                while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-                while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-                
-                const inAttackCone = dist <= this.attackRange && Math.abs(angleDiff) <= (Math.PI / 4);
+                // Если дрон близко — считаем честное расстояние
+                const dist = Math.sqrt(dx * dx + dy * dy);
 
-                // Захватываем цель, если она гарантированно видна и находится в зоне досягаемости
-                if (invader.isVisible && (inBlindZone || inAttackCone) && dist < closestDist) {
+                // Условие А: Автономная слепая зона (45px)
+                const inBlindZone = dist <= this.visionRadius;
+                if (inBlindZone) {
+                    invader.visibilityTimer = 1000; // Подсвечиваем сами
+                }
+
+                // Условие Б: Конус обстрела (Вычисляем Math.atan2 ТОЛЬКО для близких дронов!)
+                let inAttackCone = false;
+                if (dist <= this.attackRange && invader.isVisible) {
+                    const angleToInvader = Math.atan2(dy, dx);
+                    let angleDiff = angleToInvader - this.currentAngle;
+                    
+                    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                    
+                    inAttackCone = Math.abs(angleDiff) <= (Math.PI / 4);
+                }
+
+                if ((inBlindZone || inAttackCone) && dist < closestDist) {
                     closestDist = dist;
                     selectedInvader = invader;
                 }
-            });
+            }
 
             if (selectedInvader) {
                 this.currentTarget = selectedInvader;
@@ -149,18 +154,20 @@ export class SimpleTurret {
             const dy = this.currentTarget.y - this.y;
             this.targetAngle = Math.atan2(dy, dx);
         } else {
-            // Упреждающий разворот по данным общей разведки РЛС
+            // Упреждение по данным РЛС для ближайшего видимого врага
             let nearestEnemy: SimpleInvader | null = null;
             let minDistance = Infinity;
 
-            visibleTargets.forEach(invader => {
-                if (!invader.isVisible || invader.hp <= 0) return;
+            for (let i = 0; i < visibleTargets.length; i++) {
+                const invader = visibleTargets[i];
+                if (!invader.isVisible || invader.hp <= 0) continue;
+
                 const dist = Math.sqrt((invader.x - this.x) ** 2 + (invader.y - this.y) ** 2);
-                if (dist < minDistance) {
+                if (dist < minDistance && dist < 400) { // Ограничиваем радиус упреждения РЛС, чтобы не грузить CPU
                     minDistance = dist;
                     nearestEnemy = invader;
                 }
-            });
+            }
 
             if (nearestEnemy) {
                 const dx = (nearestEnemy as SimpleInvader).x - this.x;
@@ -178,8 +185,8 @@ export class SimpleTurret {
             const currentTargetAngle = Math.atan2(dy, dx);
 
             let fireDiff = currentTargetAngle - this.currentAngle;
-            while (fireDiff < -Math.PI) fireDiff += Math.PI * 2;
-            while (fireDiff > Math.PI) fireDiff -= Math.PI * 2;
+            
+            fireDiff = Math.atan2(Math.sin(fireDiff), Math.cos(fireDiff));
 
             if (Math.abs(fireDiff) <= 0.15) {
                 this.attackTimer += deltaTime;
