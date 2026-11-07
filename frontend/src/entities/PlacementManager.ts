@@ -1,18 +1,12 @@
-export type BuildingType = 'RADAR' | 'TURRET' | null;
+export type BuildType = 'RADAR' | 'TURRET' | 'POWER' | 'REPAIR' | 'AMMO_DEPOT';
 
 export class PlacementManager {
-    public currentBuildType: BuildingType = null;
+    public currentBuildType: BuildType | null = null;
 
-    /**
-     * Включает режим строительства для конкретного типа башни
-     */
-    public startBuilding(type: BuildingType): void {
+    public selectBuilding(type: BuildType): void {
         this.currentBuildType = type;
     }
 
-    /**
-     * Сбрасывает режим строительства (отмена)
-     */
     public cancelBuilding(): void {
         this.currentBuildType = null;
     }

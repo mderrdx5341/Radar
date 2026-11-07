@@ -4,10 +4,10 @@ import { UIRenderer } from './UIRenderer';
 import { RadarRenderer } from './RadarRenderer';
 import { TurretRenderer } from './TurretRenderer';
 import { InvaderRenderer } from './InvaderRenderer';
-// Импортируем три наших расщеплённых графических компонента построек базы
 import { PowerNodeRenderer } from './PowerNodeRenderer';
 import { RepairBayRenderer } from './RepairBayRenderer';
 import { ResourceHarvesterRenderer } from './ResourceHarvesterRenderer';
+import { AmmoDepotRenderer } from './AmmoDepotRenderer'; 
 import { DebugRenderer } from './DebugRenderer'; 
 
 export class CanvasRenderer {
@@ -16,15 +16,14 @@ export class CanvasRenderer {
 
     private environmentRenderer: EnvironmentRenderer;
     private uiRenderer: UIRenderer;
-    
     private radarRenderer: RadarRenderer;
     private turretRenderer: TurretRenderer;
     private invaderRenderer: InvaderRenderer;
     
-    // Под-службы визуализации инфраструктуры базы
     private powerNodeRenderer: PowerNodeRenderer;
     private repairBayRenderer: RepairBayRenderer;
     private resourceHarvesterRenderer: ResourceHarvesterRenderer;
+    private ammoDepotRenderer: AmmoDepotRenderer; 
     
     private debugRenderer: DebugRenderer;
 
@@ -35,34 +34,18 @@ export class CanvasRenderer {
         
         this.environmentRenderer = new EnvironmentRenderer(this.ctx);
         this.uiRenderer = new UIRenderer(this.ctx);
-
         this.radarRenderer = new RadarRenderer(this.ctx);
         this.turretRenderer = new TurretRenderer(this.ctx);
         this.invaderRenderer = new InvaderRenderer(this.ctx);
-
-        // ИСПРАВЛЕНО: Жёстко инициализируем все три рендерера зданий в конструкторе!
+        
         this.powerNodeRenderer = new PowerNodeRenderer(this.ctx);
         this.repairBayRenderer = new RepairBayRenderer(this.ctx);
         this.resourceHarvesterRenderer = new ResourceHarvesterRenderer(this.ctx);
+        this.ammoDepotRenderer = new AmmoDepotRenderer(this.ctx); 
         
         this.debugRenderer = new DebugRenderer(this.ctx);
-
-        this.warmupGraphics();
     }
 
-    private warmupGraphics(): void {
-        this.ctx.save();
-        this.ctx.translate(-5000, -5000);
-        this.uiRenderer.drawScoreUI(0);
-        this.uiRenderer.drawSelectedNameUI(1280, 'WARMUP');
-        this.ctx.restore();
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        console.log('[Графическое Ядро]: Полное послойное расщепление компонентов базы завершено успешно.');
-    }
-
-    /**
-     * ГЛАВНЫЙ СЖАТЫЙ КОНВЕЙЕР СБОРКИ КАДРА ПО КЛАВИШЕ ОТЛАДКИ KEYK
-     */
     public render(state: GameState, camera: CameraSystem, interfaceService: InterfaceService): void {
         const scrWidth = this.canvas.width;
         const scrHeight = this.canvas.height;
@@ -77,35 +60,109 @@ export class CanvasRenderer {
         
         const selectedEntity = interfaceService.activeController?.getEntity() || null;
 
-        // СЛОЙ ОТЛАДКИ: Если активирован дебаг-режим (по клавише K), рендерим закрашенные квадраты и пути БПЛА
+        // 1. Отрисовка контекстных неоновых радиусов при клике игрока (Без дебага)
+ if (selectedEntity) {
+            this.ctx.save();
+            this.ctx.lineWidth = 1.5;
+
+            if (selectedEntity.type === 'POWER') {
+                // А) Мягкий синий радиус действия энергосети
+                this.ctx.strokeStyle = 'rgba(56, 139, 253, 0.35)';
+                this.ctx.beginPath();
+                this.ctx.arc(selectedEntity.x, selectedEntity.y, (selectedEntity as any).powerRadius || 300, 0, Math.PI * 2);
+                this.ctx.stroke();
+
+                // Б) Синие ЛЭП-пунктиры ко всем РЛС, которые питаются от этого узла
+                this.ctx.strokeStyle = 'rgba(56, 139, 253, 0.6)';
+                this.ctx.setLineDash([4, 4]); // Пунктирный неоновый кабель
+                state.player.radars.forEach((radar: any) => {
+                    const distSq = (selectedEntity.x - radar.x) ** 2 + (selectedEntity.y - radar.y) ** 2;
+                    if (distSq <= (300 * 300)) {
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(selectedEntity.x, selectedEntity.y);
+                        this.ctx.lineTo(radar.x, radar.y);
+                        this.ctx.stroke();
+                    }
+                });
+                
+            } else if (selectedEntity.type === 'AMMO_DEPOT') {
+                // А) Жёлтый радиус логистического снабжения патронами
+                this.ctx.strokeStyle = 'rgba(242, 199, 68, 0.35)';
+                this.ctx.beginPath();
+                this.ctx.arc(selectedEntity.x, selectedEntity.y, (selectedEntity as any).supplyRadius || 350, 0, Math.PI * 2);
+                this.ctx.stroke();
+
+                // Б) Жёлтые конвейерные нити подвоза патронов к подключенным пушкам ПВО
+                const a = selectedEntity as any;
+                const isOver = a.connectedTurretsCount > a.maxSafeLoad;
+                
+                // Если Склад боеприпасов перегружен — нити снабжения мигают оранжевым цветом!
+                this.ctx.strokeStyle = isOver ? 'rgba(245, 158, 11, 0.7)' : 'rgba(242, 199, 68, 0.6)';
+                this.ctx.setLineDash([4, 4]);
+                
+                state.player.turrets.forEach((turret: any) => {
+                    const distSq = (selectedEntity.x - turret.x) ** 2 + (selectedEntity.y - turret.y) ** 2;
+                    if (distSq <= (350 * 350)) {
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(selectedEntity.x, selectedEntity.y);
+                        this.ctx.lineTo(turret.x, turret.y);
+                        this.ctx.stroke();
+                    }
+                });
+                
+            } else if (selectedEntity.type === 'REPAIR') {
+                // А) Зелёный радиус инженерной поддержки рем-зоны
+                this.ctx.strokeStyle = 'rgba(57, 211, 83, 0.35)';
+                this.ctx.beginPath();
+                this.ctx.arc(selectedEntity.x, selectedEntity.y, (selectedEntity as any).repairRadius || 200, 0, Math.PI * 2);
+                this.ctx.stroke();
+
+                // Б) Зелёные пунктирные рем-лучи ко всем чинящимся зданиям базы
+                this.ctx.strokeStyle = 'rgba(57, 211, 83, 0.5)';
+                this.ctx.setLineDash([4, 4]);
+                state.player.buildings.forEach((b: any) => {
+                    if (b === selectedEntity || b.isDestroyed) return;
+                    const distSq = (selectedEntity.x - b.x) ** 2 + (selectedEntity.y - b.y) ** 2;
+                    if (distSq <= (200 * 200)) {
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(selectedEntity.x, selectedEntity.y);
+                        this.ctx.lineTo(b.x, b.y);
+                        this.ctx.stroke();
+                    }
+                });
+            }
+            this.ctx.restore();
+        }
+
+        // 2. Слой ИИ дебага (Кнопки K и L)
         if (state.isDebugMode || state.isWaveDebugMode) {
             this.debugRenderer.draw(
                 state.enemySwarm.invaders, 
                 state.enemySwarm.routeManager.getDiscoveredHazards(),
                 state.enemySwarm.spawnNodes,
-                state.isDebugMode,          // Передаем флаг кнопки K
-                state.isWaveDebugMode       // Передаем флаг кнопки L
+                state.isDebugMode,
+                state.isWaveDebugMode
             );
         }
 
-        // СЛОЙ 1: ИНФРАСТРУКТУРА БАЗЫ (Рендерится поштучно в зависимости от типа бункера)
+        // 3. АРХИТЕКТУРНО ЧИСТАЯ ОТРИСОВКА: Каждое здание рисуется строго своим классом
         state.player.buildings.forEach(building => {
-            if (building.type === 'POWER') this.powerNodeRenderer.draw(building);
-            else if (building.type === 'REPAIR') this.repairBayRenderer.draw(building);
+            if (building.type === 'POWER') this.powerNodeRenderer.draw(building as any);
+            else if (building.type === 'REPAIR') this.repairBayRenderer.draw(building as any);
+            else if (building.type === 'AMMO_DEPOT') this.ammoDepotRenderer.draw(building as any);
             else if (building.type === 'HARVESTER') this.resourceHarvesterRenderer.draw(building);
         });
-
-        // СЛОЙ 2: СТАНЦИИ РЛС ИГРОКА
+        
+        // 4. Боевые единицы игрока
         state.player.radars.forEach(radar => {
             this.radarRenderer.draw(radar, selectedEntity);
         });
 
-        // СЛОЙ 3: БАТАРЕИ ПВО ИГРОКА
         state.player.turrets.forEach(turret => {
             this.turretRenderer.draw(turret, selectedEntity);
         });
         
-        // СЛОЙ 4: ВРАЖЕСКИЙ РОЙ КАМИКАДЗЕ
+        // 5. Отрисовка вражеского роя БПЛА
         this.invaderRenderer.drawAll(state.enemySwarm.invaders);
 
         if (state.player.placement.currentBuildType && !state.isGameOver) {
@@ -126,30 +183,15 @@ export class CanvasRenderer {
 
         this.uiRenderer.drawScoreUI(state.score);
 
-        // Индикатор отладки на экране HUD по вашей кнопке K
-        if (state.isDebugMode) {
-            this.ctx.fillStyle = '#39d353';
-            this.ctx.font = 'bold 12px monospace';
-            this.ctx.textAlign = 'left';
-            this.ctx.fillText(' СИСТЕМА ДЕБАГА ИИ: СЕТКА А* АКТИВНА (КЛАВИША K) ', 20, 30);
-        }
-
-        if (state.isGameOver) {
-            const powerNodes = state.player.buildings.filter(b => b.type === 'POWER');
-            const allPowerDestroyed = powerNodes.every(b => b.isDestroyed);
-            
-            let reason = 'Все объекты инфраструктуры базы полностью уничтожены.';
-            if (allPowerDestroyed) {
-                reason = 'Критический сбой: Энергоблок уничтожен. Оборона обесточена.';
-            }
-            this.uiRenderer.drawGameOverOverlay(scrWidth, scrHeight, reason);
-        }
-
         if (state.isWaveDebugMode) {
             this.ctx.fillStyle = '#f2c744';
             this.ctx.font = 'bold 12px monospace';
             this.ctx.textAlign = 'left';
             this.ctx.fillText(' ПОКАДРОВЫЙ АНАЛИЗ ФРОНТА А* АКТИВЕН (КЛАВИША L) ', 20, 50);
+        }
+
+        if (state.isGameOver) {
+            this.uiRenderer.drawGameOverOverlay(scrWidth, scrHeight, 'Критический сбой инфраструктуры.');
         }
     }
 }

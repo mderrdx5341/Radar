@@ -53,15 +53,15 @@ export class UIRenderer {
     }
 
     /**
-     * Отрисовка полупрозрачного силуэта-призрака будущей постройки с радиусами действия
-     */
- /**
-     * Отрисовка полупрозрачного силуэта-призрака будущей постройки с радиусами действия
+     * ОТРИСОВКА ПОЛУПРОЗРАЧНОГО ПРИЗРАКА ЗДАНИЯ ЗА КУРСОРOM МЫШИ В РЕЖИМЕ СТРОИТЕЛЬСТВА
      */
     public drawGhostBuilding(type: string, x: number, y: number): void {
         this.ctx.save();
         this.ctx.lineWidth = 1.5;
 
+        // =============================================================
+        // 1. ОРИГИНАЛЬНЫЙ КОД ИГРОКА ДЛЯ ОБОРОНИТЕЛЬНЫХ СИСТЕМ (РЛС И ПВО)
+        // =============================================================
         if (type === 'RADAR') {
             // 1. Рисуем конус радарной развёртки
             this.ctx.beginPath();
@@ -71,8 +71,8 @@ export class UIRenderer {
             this.ctx.strokeStyle = '#58a6ff';
             this.ctx.stroke();
 
-            // ИСПРАВЛЕНО: Рисуем сам центральный квадратик корпуса РЛС (размер 20x20px, центрирован)
-            this.ctx.fillStyle = 'rgba(56, 139, 253, 0.3)'; // Полупрозрачный синий чертеж
+            // Рисуем сам центральный квадратик корпуса РЛС (размер 20x20px, центрирован)
+            this.ctx.fillStyle = 'rgba(56, 139, 253, 0.3)'; 
             this.ctx.fillRect(x - 10, y - 10, 20, 20);
             this.ctx.strokeStyle = '#58a6ff';
             this.ctx.strokeRect(x - 10, y - 10, 20, 20);
@@ -89,61 +89,125 @@ export class UIRenderer {
             this.ctx.strokeStyle = 'rgba(57, 211, 83, 0.2)';
             this.ctx.stroke();
 
-            // ИСПРАВЛЕНО: Рисуем центральный квадратик корпуса ПВО (размер 20x20px, центрирован)
-            this.ctx.fillStyle = 'rgba(57, 211, 83, 0.3)'; // Полупрозрачный зелёный чертеж
+            // Рисуем центральный квадратик корпуса ПВО (размер 20x20px, центрирован)
+            this.ctx.fillStyle = 'rgba(57, 211, 83, 0.3)'; 
             this.ctx.fillRect(x - 10, y - 10, 20, 20);
             this.ctx.strokeStyle = '#39d353';
             this.ctx.strokeRect(x - 10, y - 10, 20, 20);
+
+        // =============================================================
+        // 2. СОВРЕМЕННЫЙ КОД ДЛЯ ИНФРАСТРУКТУРНЫХ ЗДАНИЙ БАЗЫ
+        // =============================================================
+        } else if (type === 'POWER') {
+            // Будущая зона энергосети (300px)
+            this.ctx.strokeStyle = 'rgba(56, 139, 253, 0.35)';
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, 300, 0, Math.PI * 2);
+            this.ctx.stroke();
+
+            // Полупрозрачный синий восьмиугольник купола (радиус 20px)
+            this.ctx.fillStyle = 'rgba(22, 27, 34, 0.4)';
+            this.ctx.strokeStyle = '#58a6ff';
+            this.ctx.lineWidth = 3;
+            this.ctx.beginPath();
+            const corners = 8;
+            for (let i = 0; i < corners; i++) {
+                const angle = (i * 2 * Math.PI) / corners;
+                const bx = x + Math.cos(angle) * 20;
+                const by = y + Math.sin(angle) * 20;
+                if (i === 0) this.ctx.moveTo(bx, by);
+                else this.ctx.lineTo(bx, by);
+            }
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+
+        } else if (type === 'REPAIR') {
+            // Будущая зона ремонта инженеров (200px)
+            this.ctx.strokeStyle = 'rgba(57, 211, 83, 0.35)';
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, 200, 0, Math.PI * 2);
+            this.ctx.stroke();
+
+            // Полупрозрачный зеленый шестиугольник ремонтного дока (радиус 20px)
+            this.ctx.fillStyle = 'rgba(22, 27, 34, 0.4)';
+            this.ctx.strokeStyle = '#34d399';
+            this.ctx.lineWidth = 3;
+            this.ctx.beginPath();
+            const corners = 6;
+            for (let i = 0; i < corners; i++) {
+                const angle = (i * 2 * Math.PI) / corners;
+                const bx = x + Math.cos(angle) * 20;
+                const by = y + Math.sin(angle) * 20;
+                if (i === 0) this.ctx.moveTo(bx, by);
+                else this.ctx.lineTo(bx, by);
+            }
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+
+        } else if (type === 'AMMO_DEPOT') {
+            // Будущая зона снабжения патронами (350px)
+            this.ctx.strokeStyle = 'rgba(242, 199, 68, 0.35)';
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, 350, 0, Math.PI * 2);
+            this.ctx.stroke();
+
+            // Полупрозрачный золотой квадрат Склада БК (сторона 40x40px, радиус 20px)
+            this.ctx.fillStyle = 'rgba(22, 27, 34, 0.4)';
+            this.ctx.strokeStyle = '#fbbf24';
+            this.ctx.lineWidth = 3;
+            this.ctx.fillRect(x - 20, y - 20, 40, 40);
+            this.ctx.strokeRect(x - 20, y - 20, 40, 40);
         }
-        
+
         this.ctx.restore();
     }
 
     /**
-     * Отрисовка нижней HUD-панели магазина с динамической привязкой к низу текущего экрана
+     * Отрисовка обновлённого магазина построек на нижней панели HUD
      */
-    public drawShopUI(canvasWidth: number, canvasHeight: number, isPaused: boolean): void {
+    public drawShopUI(scrWidth: number, scrHeight: number, isPaused: boolean): void {
         this.ctx.save();
-        const shopY = canvasHeight - 60;
-
-        this.ctx.fillStyle = '#161b22';
-        this.ctx.fillRect(0, shopY, canvasWidth, 60);
-        this.ctx.strokeStyle = '#30363d';
-        this.ctx.strokeRect(0, shopY, canvasWidth, 60);
-
-        this.ctx.font = '12px sans-serif';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
-
-        // 1. Кнопка РЛС
-        this.ctx.fillStyle = '#21262d';
-        this.ctx.fillRect(20, shopY + 10, 140, 40);
-        this.ctx.strokeStyle = '#8b949e';
-        this.ctx.strokeRect(20, shopY + 10, 140, 40);
-        this.ctx.fillStyle = '#c9d1d9';
-        this.ctx.fillText('1. + РЛС (ЛКМ)', 90, shopY + 30);
-
-        // 2. Кнопка ПВО
-        this.ctx.fillStyle = '#21262d';
-        this.ctx.fillRect(180, shopY + 10, 140, 40);
-        this.ctx.strokeStyle = '#8b949e';
-        this.ctx.strokeRect(180, shopY + 10, 140, 40);
-        this.ctx.fillStyle = '#c9d1d9';
-        this.ctx.fillText('2. + ПВО (ЛКМ)', 250, shopY + 30);
-
-        // 3. Кнопка Тактическая Пауза
-        this.ctx.fillStyle = isPaused ? 'rgba(214, 116, 34, 0.2)' : '#21262d';
-        this.ctx.fillRect(340, shopY + 10, 140, 40);
-        this.ctx.strokeStyle = isPaused ? '#d67422' : '#8b949e';
-        this.ctx.strokeRect(340, shopY + 10, 140, 40);
-        this.ctx.fillStyle = isPaused ? '#e38e44' : '#c9d1d9';
-        this.ctx.fillText(isPaused ? '▶ ПРОДОЛЖИТЬ' : '⏸ ПАУЗА (Space)', 410, shopY + 30);
         
-        this.ctx.restore();
+        // Рисуем нижнюю плашку HUD панели
+        this.ctx.fillStyle = 'rgba(22, 27, 34, 0.95)';
+        this.ctx.strokeStyle = '#30363d';
+        this.ctx.lineWidth = 2;
+        this.ctx.fillRect(0, scrHeight - 60, scrWidth, 60);
+        this.ctx.strokeRect(0, scrHeight - 60, scrWidth, 60);
 
-        if (isPaused) {
-            this.drawPauseOverlay(canvasWidth, canvasHeight);
-        }
+        // Конфигурация 5 тактических кнопок строительства
+        const buttons = [
+            { type: 'RADAR', label: '📡 РЛС' },
+            { type: 'TURRET', label: '🎯 ПВО' },
+            { type: 'POWER', label: '⚡ Энергия' },
+            { type: 'REPAIR', label: '🛠️ Ремонт' },
+            { type: 'AMMO_DEPOT', label: '📦 Склад БК' }
+        ];
+
+        buttons.forEach((btn, i) => {
+            const btnX = 20 + i * 130;
+            const btnY = scrHeight - 45;
+            const btnWidth = 110;
+            const btnHeight = 30;
+
+            // Подсветка кнопки
+            this.ctx.fillStyle = '#21262d';
+            this.ctx.strokeStyle = '#8b949e';
+            this.ctx.lineWidth = 1;
+            this.ctx.fillRect(btnX, btnY, btnWidth, btnHeight);
+            this.ctx.strokeRect(btnX, btnY, btnWidth, btnHeight);
+
+            // Текст внутри кнопки
+            this.ctx.fillStyle = '#c9d1d9';
+            this.ctx.font = 'bold 12px sans-serif';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText(btn.label, btnX + btnWidth / 2, btnY + btnHeight / 2);
+        });
+
+        this.ctx.restore();
     }
 
     /**

@@ -1,29 +1,26 @@
-import { SimpleBuilding } from '../entities/buildings/SimpleBuilding';
+import { PowerNode } from '../entities/buildings/PowerNode';
 
 export class PowerNodeRenderer {
     private ctx: CanvasRenderingContext2D;
-    private readonly buildingColor = '#58a6ff'; // Фирменный неоновый синий цвет энергии
+    private readonly buildingColor = '#58a6ff';
 
     constructor(ctx: CanvasRenderingContext2D) {
         this.ctx = ctx;
     }
 
-    public draw(building: SimpleBuilding): void {
+    public draw(building: PowerNode): void {
         this.ctx.save();
 
-        // Сценарий 1: Объект полностью уничтожен роем камикадзе
         if (building.isDestroyed) {
             this.drawDestroyedState(building);
             this.ctx.restore();
             return;
         }
 
-        // Сценарий 2: Объект функционирует в энергосети базы
         this.ctx.fillStyle = 'rgba(22, 27, 34, 0.9)';
         this.ctx.strokeStyle = this.buildingColor;
         this.ctx.lineWidth = 3;
 
-        // Построение геометрии купола (восьмиугольник)
         this.ctx.beginPath();
         const corners = 8;
         for (let i = 0; i < corners; i++) {
@@ -38,19 +35,40 @@ export class PowerNodeRenderer {
         this.ctx.fill();
         this.ctx.stroke();
 
-        // Энергетическое ядро генератора
         this.ctx.fillStyle = this.buildingColor;
         this.ctx.beginPath();
         this.ctx.arc(building.x, building.y, 8, 0, Math.PI * 2);
         this.ctx.fill();
 
-        // Отрисовка тактического интерфейса прочности (HP-бар)
         this.drawHealthBar(building);
+
+        // ==========================================
+        // НОВЫЙ ГОРИЗОНТАЛЬНЫЙ ИНДИКАТОР НАГРУЗКИ (БЕЗ НАЛОЖЕНИЙ)
+        // ==========================================
+        const indicatorY = building.y - 50; // Единая высота для всего блока
+        const isOver = building.connectedRadarsCount > building.maxSafeLoad;
+
+        // 1. Отрисовка аккуратной подложки-плашки для читаемости цифр
+        this.ctx.fillStyle = 'rgba(13, 17, 23, 0.75)';
+        this.ctx.fillRect(building.x - 20, indicatorY - 7, 40, 12);
+
+        // 2. Рисуем лампочку СЛЕВА (сдвиг на -11 пикселей от центра)
+        this.ctx.fillStyle = isOver ? '#ff4444' : '#38bdf8';
+        this.ctx.beginPath();
+        this.ctx.arc(building.x - 11, indicatorY - 1, 3.5, 0, Math.PI * 2);
+        this.ctx.fill();
+
+        // 3. Печатаем цифры СПРАВА (сдвиг вправо, выравнивание по левому краю 'left')
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = 'bold 10px monospace';
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(`${building.connectedRadarsCount}/${building.maxSafeLoad}`, building.x - 4, indicatorY - 1);
 
         this.ctx.restore();
     }
 
-    private drawDestroyedState(building: SimpleBuilding): void {
+    private drawDestroyedState(building: PowerNode): void {
         this.ctx.fillStyle = '#21262d';
         this.ctx.strokeStyle = '#30363d';
         this.ctx.lineWidth = 2;
@@ -59,7 +77,6 @@ export class PowerNodeRenderer {
         this.ctx.fill();
         this.ctx.stroke();
 
-        // Красный крест поверх руин обесточенного блока
         this.ctx.strokeStyle = '#ff4444';
         this.ctx.beginPath();
         this.ctx.moveTo(building.x - 10, building.y - 10);
@@ -69,7 +86,7 @@ export class PowerNodeRenderer {
         this.ctx.stroke();
     }
 
-    private drawHealthBar(building: SimpleBuilding): void {
+    private drawHealthBar(building: PowerNode): void {
         const barWidth = 44;
         const barHeight = 4;
         const barX = building.x - barWidth / 2;
@@ -78,15 +95,16 @@ export class PowerNodeRenderer {
         this.ctx.fillStyle = '#ff4444';
         this.ctx.fillRect(barX, barY, barWidth, barHeight);
 
-        const hpPercentage = building.hp / building.maxHp;
-        this.ctx.fillStyle = hpPercentage > 0.4 ? '#39d353' : '#f2c744';
+        const maxHp = building.maxHp || 100;
+        const hpPercentage = Math.max(0, Math.min(1, building.hp / maxHp));
+        
+        this.ctx.fillStyle = hpPercentage > 0.5 ? '#39d353' : '#f2c744';
         this.ctx.fillRect(barX, barY, barWidth * hpPercentage, barHeight);
 
         this.ctx.strokeStyle = '#0d1117';
         this.ctx.lineWidth = 1;
         this.ctx.strokeRect(barX, barY, barWidth, barHeight);
 
-        // Подпись имени строения
         this.ctx.fillStyle = '#c9d1d9';
         this.ctx.font = '10px sans-serif';
         this.ctx.textAlign = 'center';

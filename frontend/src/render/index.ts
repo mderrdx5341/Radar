@@ -7,3 +7,4 @@ export * from './BuildingRenderer'; // Добавьте
 export * from './PowerNodeRenderer';
 export * from './RepairBayRenderer';
 export * from './ResourceHarvesterRenderer';
+export * from './AmmoDepotRenderer';

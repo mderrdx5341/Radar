@@ -1,14 +1,14 @@
-import { SimpleBuilding } from '../entities/buildings/SimpleBuilding';
+import { RepairBay } from '../entities/buildings/RepairBay';
 
 export class RepairBayRenderer {
     private ctx: CanvasRenderingContext2D;
-    private readonly buildingColor = '#39d353'; // Тактический зелёный цвет ремонта
+    private readonly buildingColor = '#34d399';
 
     constructor(ctx: CanvasRenderingContext2D) {
         this.ctx = ctx;
     }
 
-    public draw(building: SimpleBuilding): void {
+    public draw(building: RepairBay): void {
         this.ctx.save();
 
         if (building.isDestroyed) {
@@ -22,7 +22,7 @@ export class RepairBayRenderer {
         this.ctx.lineWidth = 3;
 
         this.ctx.beginPath();
-        const corners = 8;
+        const corners = 6;
         for (let i = 0; i < corners; i++) {
             const angle = (i * 2 * Math.PI) / corners;
             const bx = building.x + Math.cos(angle) * building.radius;
@@ -35,17 +35,41 @@ export class RepairBayRenderer {
         this.ctx.fill();
         this.ctx.stroke();
 
-        this.ctx.fillStyle = this.buildingColor;
+        this.ctx.strokeStyle = this.buildingColor;
+        this.ctx.lineWidth = 4;
         this.ctx.beginPath();
-        this.ctx.arc(building.x, building.y, 8, 0, Math.PI * 2);
-        this.ctx.fill();
+        this.ctx.moveTo(building.x - 8, building.y);
+        this.ctx.lineTo(building.x + 8, building.y);
+        this.ctx.moveTo(building.x, building.y - 8);
+        this.ctx.lineTo(building.x, building.y + 8);
+        this.ctx.stroke();
 
         this.drawHealthBar(building);
+
+        // ==========================================
+        // НОВЫЙ ГОРИЗОНТАЛЬНЫЙ ИНДИКАТОР НАГРУЗКИ (БЕЗ НАЛОЖЕНИЙ)
+        // ==========================================
+        const indicatorY = building.y - 50;
+        const isOver = building.connectedBuildingsCount > building.maxSafeLoad;
+
+        this.ctx.fillStyle = 'rgba(13, 17, 23, 0.75)';
+        this.ctx.fillRect(building.x - 20, indicatorY - 7, 40, 12);
+
+        this.ctx.fillStyle = isOver ? '#ffaa00' : '#34d399';
+        this.ctx.beginPath();
+        this.ctx.arc(building.x - 11, indicatorY - 1, 3.5, 0, Math.PI * 2);
+        this.ctx.fill();
+
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = 'bold 10px monospace';
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(`${building.connectedBuildingsCount}/${building.maxSafeLoad}`, building.x - 4, indicatorY - 1);
 
         this.ctx.restore();
     }
 
-    private drawDestroyedState(building: SimpleBuilding): void {
+    private drawDestroyedState(building: RepairBay): void {
         this.ctx.fillStyle = '#21262d';
         this.ctx.strokeStyle = '#30363d';
         this.ctx.lineWidth = 2;
@@ -63,7 +87,7 @@ export class RepairBayRenderer {
         this.ctx.stroke();
     }
 
-    private drawHealthBar(building: SimpleBuilding): void {
+    private drawHealthBar(building: RepairBay): void {
         const barWidth = 44;
         const barHeight = 4;
         const barX = building.x - barWidth / 2;
@@ -72,8 +96,10 @@ export class RepairBayRenderer {
         this.ctx.fillStyle = '#ff4444';
         this.ctx.fillRect(barX, barY, barWidth, barHeight);
 
-        const hpPercentage = building.hp / building.maxHp;
-        this.ctx.fillStyle = hpPercentage > 0.4 ? '#39d353' : '#f2c744';
+        const maxHp = building.maxHp || 100;
+        const hpPercentage = Math.max(0, Math.min(1, building.hp / maxHp));
+        
+        this.ctx.fillStyle = hpPercentage > 0.5 ? '#39d353' : '#f2c744';
         this.ctx.fillRect(barX, barY, barWidth * hpPercentage, barHeight);
 
         this.ctx.strokeStyle = '#0d1117';

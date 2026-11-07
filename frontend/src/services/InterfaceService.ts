@@ -2,7 +2,7 @@ import { InputManager } from './InputManager';
 import { CameraSystem } from './CameraSystem';
 import { Player } from './Player';
 import { GameState } from './GameState';
-import { EntityController, TurretController, RadarController } from '../controllers';
+import { EntityController, TurretController, RadarController, BuildingController } from '../controllers';
 
 export class InterfaceService {
     // Полиморфная ссылка на активный низкоуровневый контроллер (РЛС или ПВО)
@@ -23,22 +23,41 @@ export class InterfaceService {
      * Центральный обработчик Левой Кнопки Мыши (ЛКМ)
      */
     public handleLeftClick(screenX: number, screenY: number, canvasHeight: number, camera: CameraSystem, player: Player, state: GameState): void {
-        if (screenY > canvasHeight - 60) {
-            if (screenX >= 20 && screenX <= 160) player.placement.startBuilding('RADAR');
-            if (screenX >= 180 && screenX <= 320) player.placement.startBuilding('TURRET');
-            if (screenX >= 340 && screenX <= 480) state.isPaused = !state.isPaused;
-            return;
+
+        // 1. ПРОВЕРКА КЛИКА ПО НИЖНЕЙ ПАНЕЛИ HUD (Выбор построек в магазине)
+        if (screenY >= canvasHeight - 60) {
+            const buttons: Array<'RADAR' | 'TURRET' | 'POWER' | 'REPAIR' | 'AMMO_DEPOT'> = [
+                'RADAR', 'TURRET', 'POWER', 'REPAIR', 'AMMO_DEPOT'
+            ];
+
+            for (let i = 0; i < buttons.length; i++) {
+                const btnX = 20 + i * 130;
+                const btnWidth = 110;
+
+                if (screenX >= btnX && screenX <= btnX + btnWidth) {
+                    const selectedType = buttons[i];
+                    state.player.placement.selectBuilding(selectedType);
+                    console.log(`[HUD Магазин]: Выбран призрачный чертеж здания: ${selectedType}`);
+                    return; 
+                }
+            }
+            return; 
         }
 
         const worldPos = camera.screenToWorld(screenX, screenY);
 
+        // 2. ЛОГИКА СТРОИТЕЛЬСТВА (Если чертеж уже выбран и мы кликаем ЛКМ ВНУТРИ ИГРОВОГО МИРА)
         if (player.placement.currentBuildType) {
             player.tryPlaceBuilding(worldPos.x, worldPos.y);
             return;
         }
 
+        // 3. ПОИСК ОБЪЕКТА КЛИКА: Перебираем Радары, Пушки ПВО и Здания базы!
         const clickedRadar = player.radars.find(r => Math.sqrt((r.x - worldPos.x) ** 2 + (r.y - worldPos.y) ** 2) <= 20);
         const clickedTurret = player.turrets.find(t => Math.sqrt((t.x - worldPos.x) ** 2 + (t.y - worldPos.y) ** 2) <= 20);
+        
+        // НОВОЕ: Находим живое здание, в радиус коллизии которого (20px) попал клик ЛКМ
+        const clickedBuilding = player.buildings.find(b => !b.isDestroyed && Math.sqrt((b.x - worldPos.x) ** 2 + (b.y - worldPos.y) ** 2) <= 20);
 
         this.deselectCurrentEntity();
 
@@ -48,8 +67,13 @@ export class InterfaceService {
         } else if (clickedTurret) {
             this.activeController = new TurretController(clickedTurret);
             console.log(`[Интерфейс]: Выбрана батарея ПВО ${clickedTurret.name}`);
+        } else if (clickedBuilding) {
+            // Используем живой класс-наследник BuildingController вместо абстрактного класса!
+            this.activeController = new BuildingController(clickedBuilding);
+            console.log(`[Интерфейс]: Выделено здание инфраструктуры: ${clickedBuilding.name}`);
         }
     }
+
 
     /**
      * Центральный обработчик Правой Кнопки Мыши (ПКМ) — НАЖАТИЕ КНОПКИ

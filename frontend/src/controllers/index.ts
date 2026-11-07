@@ -2,3 +2,4 @@
 export * from '../controllers/EntityController';
 export * from '../controllers/TurretController';
 export * from '../controllers/RadarController';
+export * from '../controllers/BuildingController';

@@ -5,197 +5,159 @@ export class SimpleTurret {
     public y: number;
     public name: string;
     
-    // ТАКТИЧЕСКИЕ ПАРАМЕТРЫ ДВУХКОНТУРНОЙ СИСТЕМЫ ПВО
-    public readonly attackRange: number = 70; // Максимальная дальность лазера (длина конуса обстрела)
-    public readonly visionRadius: number = 45; // Малый автономный круговой радиус («слепая зона»)
+    // Оригинальные характеристики пушки ПВО
+    public readonly attackRange: number = 70; // Длина конуса обстрела
+    public readonly visionRadius: number = 45; // Круг автономного обнаружения в упор
     
     public currentTarget: SimpleInvader | null = null;
-
-    // ФИЗИКА ВРАЩЕНИЯ БАШНИ И ПРИВОДОВ СТВОЛА
-    public currentAngle: number = -Math.PI / 2; // Куда ствол смотрит физически прямо сейчас
-    private targetAngle: number = -Math.PI / 2;  // Куда приводы пытаются повернуть ствол
-    private rotationSpeed: number = 0.05;        // Скорость наведения (радиан за кадр)
-
-    // ПЕРЕМЕННЫЕ ПЛАВНОГО ПЕРЕМЕЩЕНИЯ КОРПУСА ТУРЕЛИ ПКМ
-    private targetX: number;
-    private targetY: number;
-    private isMoving: boolean = false;
-    private moveSpeed: number = 4; 
+    public currentAngle: number = -Math.PI / 2; // При установке смотрит строго вверх
     
-    private attackTimer: number = 0;
-    private readonly attackInterval: number = 300; 
+    // Внутренняя память точки назначения передислокации
+    public targetMoveX: number | null = null;
+    public targetMoveY: number | null = null;
+
+    // МЕХАНИКА БОЕКОМПЛЕКТА
+    public magazineSize: number = 10;
+    public currentAmmo: number = 10;
+    public attackInterval: number = 200; 
+    public attackTimer: number = 0;
+    
+    public isReloading: boolean = false;
+    public reloadDuration: number = 2000; 
+    public reloadTimer: number = 0;
+
+    public isSupplied: boolean = false;
+    public hasPenalty: boolean = false;
 
     constructor(x: number, y: number, name: string) {
         this.x = x;
         this.y = y;
-        this.targetX = x;
-        this.targetY = y;
         this.name = name;
-        this.currentAngle = -Math.PI / 2;
-        this.targetAngle = -Math.PI / 2;
+        this.targetMoveX = x;
+        this.targetMoveY = y;
     }
 
     public moveTo(targetX: number, targetY: number): void {
-        this.targetX = targetX;
-        this.targetY = targetY;
-        this.isMoving = true;
+        this.targetMoveX = targetX;
+        this.targetMoveY = targetY;
     }
 
-    /**
-     * Плавный покадровый сдвиг корпуса и доворот ствола пушки ПВО
-     */
     public updateMovement(deltaTime: number): void {
-        const timeFactor = deltaTime / 16.66; 
-
-        // 1. Движение корпуса по карте
-        if (this.isMoving) {
-            const dx = this.targetX - this.x;
-            const dy = this.targetY - this.y;
+        if (this.targetMoveX !== null && this.targetMoveY !== null) {
+            const dx = this.targetMoveX - this.x;
+            const dy = this.targetMoveY - this.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
-            const step = this.moveSpeed * timeFactor;
+            const speed = 4; 
 
-            if (dist <= step) {
-                this.x = this.targetX;
-                this.y = this.targetY;
-                this.isMoving = false;
+            if (dist > speed) {
+                this.x += (dx / dist) * speed;
+                this.y += (dy / dist) * speed;
             } else {
-                const angle = Math.atan2(dy, dx);
-                this.x += Math.cos(angle) * step;
-                this.y += Math.sin(angle) * step;
+                this.x = this.targetMoveX;
+                this.y = this.targetMoveY;
             }
         }
 
-        // 2. ИСПРАВЛЕНО: Честный покадровый доворот башни ствола к targetAngle без бесконечных циклов!
-        let angleDiff = this.targetAngle - this.currentAngle;
-        
-        // Нормализация разности углов в тригонометрический диапазон [-PI, PI]
-        while (angleDiff < -Math.PI) {
-            angleDiff += Math.PI * 2;
-        }
-        while (angleDiff > Math.PI) {
-            angleDiff -= Math.PI * 2;
-        }
+        if (this.currentTarget) {
+            const dx = this.currentTarget.x - this.x;
+            const dy = this.currentTarget.y - this.y;
+            const targetAngle = Math.atan2(dy, dx);
+            let angleDiff = targetAngle - this.currentAngle;
+            angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
 
-        const maxRotationStep = this.rotationSpeed * timeFactor;
-        if (Math.abs(angleDiff) <= maxRotationStep) {
-            this.currentAngle = this.targetAngle;
-        } else {
-            this.currentAngle += Math.sign(angleDiff) * maxRotationStep;
+            const rotationSpeed = 0.004 * deltaTime;
+            if (Math.abs(angleDiff) > rotationSpeed) {
+                this.currentAngle += Math.sign(angleDiff) * rotationSpeed;
+            } else {
+                this.currentAngle = targetAngle;
+            }
         }
     }
 
-       /**
-     * Боевая фаза: Сверхскоростной поиск цели без тригонометрических перегрузок CPU
-     */
-    public attack(visibleTargets: Array<SimpleInvader>, deltaTime: number): void {
-        // 1. ПРОВЕРКА ПОТЕРЯНОЙ ИЛИ СБИТОЙ ЦЕЛИ
-        if (this.currentTarget && (this.currentTarget.hp <= 0 || !this.currentTarget.isVisible)) {
+    public attack(allInvaders: Array<SimpleInvader>, deltaTime: number, hasGlobalRadar: boolean): void {
+        if (this.isReloading) {
+            this.reloadTimer += deltaTime;
+            if (this.reloadTimer >= this.reloadDuration) {
+                this.isReloading = false;
+                this.reloadTimer = 0;
+                const activeMagazineSize = this.hasPenalty ? 5 : this.magazineSize;
+                this.currentAmmo = this.isSupplied ? activeMagazineSize : 0;
+            }
+            return;
+        }
+
+        if (this.currentAmmo <= 0) {
+            if (this.isSupplied) {
+                this.isReloading = true;
+            }
             this.currentTarget = null;
+            return;
         }
 
-        if (this.currentTarget) {
-            const dist = Math.sqrt((this.currentTarget.x - this.x) ** 2 + (this.currentTarget.y - this.y) ** 2);
-            if (dist > this.attackRange) {
-                this.currentTarget = null;
+        let bestTarget: SimpleInvader | null = null;
+        let minDist = Infinity;
+
+        for (let i = 0; i < allInvaders.length; i++) {
+            const invader = allInvaders[i];
+            if (invader.hp <= 0) continue;
+
+            const dx = invader.x - this.x;
+            const dy = invader.y - this.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            // КРИТИЧЕСКИЙ ФИКС 1: Обнаружение всенаправленным кругом 45px.
+            // ИСПРАВЛЕНО: Убрана запрещенная перезапись invader.isVisible, 
+            // взвод таймера на 1 секунду легально включит нативный геттер БПЛА!
+            if (dist <= this.visionRadius) {
+                invader.visibilityTimer = 1000;
+            }
+
+            // Проверка конуса обстрела 70 пикселей
+            if (dist <= this.attackRange) {
+                const targetAngle = Math.atan2(dy, dx);
+                let angleDiff = targetAngle - this.currentAngle;
+                angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+
+                // КРИТИЧЕСКИЙ ФИКС 2: Если БПЛА в направленном конусе обстрела 70px вдоль ствола (fireDiff <= 0.3)
+                // ИСПРАВЛЕНО: Зажигаем видимость только через взвод visibilityTimer!
+                const isInAttackCone = Math.abs(angleDiff) <= 0.3;
+                if (isInAttackCone) {
+                    invader.visibilityTimer = 1000;
+                }
+
+                const isTargetVisible = invader.isVisible || (dist <= this.visionRadius);
+                
+                if (isTargetVisible && dist < minDist) {
+                    minDist = dist;
+                    bestTarget = invader;
+                }
             }
         }
 
-        // 2. ИСПРАВЛЕНО (ЗАЩИТА ОТ ФРИЗОВ): Быстрый ленивый захват цели
-        if (!this.currentTarget) {
-            let selectedInvader: SimpleInvader | null = null;
-            let closestDist = Infinity;
+        this.currentTarget = bestTarget;
 
-            for (let i = 0; i < visibleTargets.length; i++) {
-                const invader = visibleTargets[i];
-                if (invader.hp <= 0) continue;
-
-                // БЫСТРЫЙ ФИЛЬТР: Сначала проверяем грубое расстояние по осям (AABB), без Math.sqrt!
-                const dx = invader.x - this.x;
-                const dy = invader.y - this.y;
-                if (Math.abs(dx) > this.attackRange || Math.abs(dy) > this.attackRange) {
-                    continue; // Дрон слишком далеко, процессор даже не будет считать для него тригонометрию!
-                }
-
-                // Если дрон близко — считаем честное расстояние
-                const dist = Math.sqrt(dx * dx + dy * dy);
-
-                // Условие А: Автономная слепая зона (45px)
-                const inBlindZone = dist <= this.visionRadius;
-                if (inBlindZone) {
-                    invader.visibilityTimer = 1000; // Подсвечиваем сами
-                }
-
-                // Условие Б: Конус обстрела (Вычисляем Math.atan2 ТОЛЬКО для близких дронов!)
-                let inAttackCone = false;
-                if (dist <= this.attackRange && invader.isVisible) {
-                    const angleToInvader = Math.atan2(dy, dx);
-                    let angleDiff = angleToInvader - this.currentAngle;
-                    
-                    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-                    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-                    
-                    inAttackCone = Math.abs(angleDiff) <= (Math.PI / 4);
-                }
-
-                if ((inBlindZone || inAttackCone) && dist < closestDist) {
-                    closestDist = dist;
-                    selectedInvader = invader;
-                }
-            }
-
-            if (selectedInvader) {
-                this.currentTarget = selectedInvader;
-            }
-        }
-
-        // 3. ФАЗА НАВЕДЕНИЯ СТВОЛА И УПРЕЖДЕНИЯ
         if (this.currentTarget) {
             const dx = this.currentTarget.x - this.x;
             const dy = this.currentTarget.y - this.y;
-            this.targetAngle = Math.atan2(dy, dx);
-        } else {
-            // Упреждение по данным РЛС для ближайшего видимого врага
-            let nearestEnemy: SimpleInvader | null = null;
-            let minDistance = Infinity;
-
-            for (let i = 0; i < visibleTargets.length; i++) {
-                const invader = visibleTargets[i];
-                if (!invader.isVisible || invader.hp <= 0) continue;
-
-                const dist = Math.sqrt((invader.x - this.x) ** 2 + (invader.y - this.y) ** 2);
-                if (dist < minDistance && dist < 400) { // Ограничиваем радиус упреждения РЛС, чтобы не грузить CPU
-                    minDistance = dist;
-                    nearestEnemy = invader;
-                }
-            }
-
-            if (nearestEnemy) {
-                const dx = (nearestEnemy as SimpleInvader).x - this.x;
-                const dy = (nearestEnemy as SimpleInvader).y - this.y;
-                this.targetAngle = Math.atan2(dy, dx); 
-            } else {
-                this.targetAngle = this.currentAngle;
-            }
-        }
-
-        // 4. ОГНЕВОЙ ЗАЛП ЛАЗЕРА (Только при точной доводке ствола)
-        if (this.currentTarget) {
-            const dx = this.currentTarget.x - this.x;
-            const dy = this.currentTarget.y - this.y;
-            const currentTargetAngle = Math.atan2(dy, dx);
-
-            let fireDiff = currentTargetAngle - this.currentAngle;
-            
+            const targetAngle = Math.atan2(dy, dx);
+            let fireDiff = targetAngle - this.currentAngle;
             fireDiff = Math.atan2(Math.sin(fireDiff), Math.cos(fireDiff));
 
-            if (Math.abs(fireDiff) <= 0.15) {
+            // Проверка доворота орудия для ведения стрельбы снарядами
+            if (Math.abs(fireDiff) <= 0.3) {
                 this.attackTimer += deltaTime;
                 if (this.attackTimer >= this.attackInterval) {
                     this.attackTimer = 0;
-                    this.currentTarget.hp -= 20; 
+                    this.currentTarget.hp -= 15;
+                    this.currentAmmo--;
 
-                    if (!this.currentTarget.attackers.includes(this)) {
-                        this.currentTarget.attackers.push(this);
+                    if (!this.currentTarget.attackers.includes(this as any)) {
+                        this.currentTarget.attackers.push(this as any);
+                    }
+
+                    if (this.currentAmmo <= 0) {
+                        this.isReloading = true;
+                        this.currentTarget = null;
                     }
                 }
             }

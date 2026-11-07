@@ -1,4 +1,4 @@
-export type InfrastructureType = 'POWER' | 'REPAIR' | 'HARVESTER';
+export type InfrastructureType = 'POWER' | 'REPAIR' | 'HARVESTER' | 'AMMO_DEPOT';
 
 export abstract class SimpleBuilding {
     public x: number;

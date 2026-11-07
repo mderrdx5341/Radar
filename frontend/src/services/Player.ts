@@ -1,4 +1,4 @@
-import { SimpleRadar, SimpleTurret, SimpleBuilding, SimpleInvader, PowerNode, RepairBay, ResourceHarvester } from '../entities';
+import { SimpleRadar, SimpleTurret, SimpleBuilding, SimpleInvader, PowerNode, RepairBay, AmmoDepot } from '../entities';
 import { PlacementManager } from '../entities/PlacementManager';
 
 export class Player {
@@ -7,8 +7,6 @@ export class Player {
     public turrets: Array<SimpleTurret> = new Array<SimpleTurret>();
     public buildings: Array<SimpleBuilding> = new Array<SimpleBuilding>();
     public placement: PlacementManager = new PlacementManager();
-
-    // Оперативный список уникальных видимых целей в текущем кадре
     public activeTargets: Array<SimpleInvader> = new Array<SimpleInvader>();
 
     constructor() {
@@ -21,66 +19,145 @@ export class Player {
         this.turrets = new Array<SimpleTurret>();
         this.buildings = new Array<SimpleBuilding>();
 
-        this.radars.push(new SimpleRadar(800, 1000, 'РЛС-1'));
-        this.turrets.push(new SimpleTurret(800, 1080, 'ПВО-1'));
-
         this.buildings.push(new PowerNode(400, 1120, 'Энергоблок ⚡'));
         this.buildings.push(new RepairBay(800, 1120, 'Ремонтный блок 🛠️'));
-        this.buildings.push(new ResourceHarvester(1200, 1120, 'Ресурсная шахта 💎'));
+        this.buildings.push(new AmmoDepot(1200, 1120, 'Склад боеприпасов 📦'));
+
+        this.radars.push(new SimpleRadar(800, 1000, 'РЛС-1'));
+        this.turrets.push(new SimpleTurret(800, 1080, 'ПВО-1'));
     }
 
-    /**
-     * Быстрый сброс длины массива (0 аллокаций на куче)
-     */
     public clearActiveTargets(): void {
         this.activeTargets.length = 0; 
     }
 
-    /**
-     * Регистрация цели от радаров
-     */
     public registerDetectedTarget(invader: SimpleInvader): void {
         if (invader.hp > 0 && !this.activeTargets.includes(invader)) {
             this.activeTargets.push(invader);
         }
     }
 
+/**
+     * Честное размещение построек из меню HUD-панели на тактическую карту
+     */
     public tryPlaceBuilding(worldX: number, worldY: number): void {
         if (!this.placement.currentBuildType) return;
 
-        const tooCloseRadar = this.radars.some(r => (r.x - worldX) * (r.x - worldX) + (r.y - worldY) * (r.y - worldY) < 400);
-        const tooCloseTurret = this.turrets.some(t => (t.x - worldX) * (t.x - worldX) + (t.y - worldY) * (t.y - worldY) < 400);
+        // ИСПРАВЛЕНО: Уменьшили радиус коллизии до 12px (диаметр 24px).
+        // Теперь пушки ПВО и радары РЛС можно ставить вплотную друг к другу!
+        const tooClose = this.buildings.some(b => !b.isDestroyed && (b.x - worldX) ** 2 + (b.y - worldY) ** 2 < 12 * 12)
+            || this.radars.some(r => (r.x - worldX) ** 2 + (r.y - worldY) ** 2 < 12 * 12)
+            || this.turrets.some(t => (t.x - worldX) ** 2 + (t.y - worldY) ** 2 < 12 * 12);
 
-        if (!tooCloseRadar && !tooCloseTurret) {
-            if (this.placement.currentBuildType === 'RADAR') {
+        if (!tooClose) {
+            const type = this.placement.currentBuildType;
+            
+            if (type === 'RADAR') {
                 this.radars.push(new SimpleRadar(worldX, worldY, `РЛС-${this.radars.length + 1}`));
-            }
-            if (this.placement.currentBuildType === 'TURRET') {
+            } else if (type === 'TURRET') {
                 this.turrets.push(new SimpleTurret(worldX, worldY, `ПВО-${this.turrets.length + 1}`));
+            } else if (type === 'POWER') {
+                this.buildings.push(new PowerNode(worldX, worldY, `Энергоблок-${this.buildings.length + 1}`));
+            } else if (type === 'REPAIR') {
+                this.buildings.push(new RepairBay(worldX, worldY, `Рем-Блок-${this.buildings.length + 1}`));
+            } else if (type === 'AMMO_DEPOT') {
+                this.buildings.push(new AmmoDepot(worldX, worldY, `Склад БК-${this.buildings.length + 1}`));
             }
-            this.placement.cancelBuilding();
+
+            console.log(`[Строительство]: Успешно развернут объект ${type}`);
+            this.placement.cancelBuilding(); 
         }
     }
 
-    /**
-     * Высокопроизводительный тактический апдейт контура Игрока
-     */
     public update(deltaTime: number, allInvaders: Array<SimpleInvader>): void {
-        // 1. Радары сканируют воздух
+        const liveBuildings = this.buildings.filter(b => !b.isDestroyed);
+        const powerNodes = liveBuildings.filter(b => b.type === 'POWER') as Array<PowerNode>;
+        const repairBays = liveBuildings.filter(b => b.type === 'REPAIR') as Array<RepairBay>;
+        const ammoDepots = liveBuildings.filter(b => b.type === 'AMMO_DEPOT') as Array<AmmoDepot>;
+
+        powerNodes.forEach(p => p.connectedRadarsCount = 0);
+        repairBays.forEach(r => r.connectedBuildingsCount = 0);
+        ammoDepots.forEach(a => a.connectedTurretsCount = 0);
+
+        // --- 1. ЭНЕРГОСЕТЬ: Распределение РЛС по Энергоблокам ---
+        this.radars.forEach(radar => {
+            const provider = powerNodes.find(p => {
+                const distSq = (p.x - radar.x) * (p.x - radar.x) + (p.y - radar.y) * (p.y - radar.y);
+                return distSq <= p.powerRadius * p.powerRadius;
+            });
+
+            if (provider) {
+                radar.isPowered = true;
+                provider.connectedRadarsCount++;
+                const isOverloaded = provider.connectedRadarsCount > provider.maxSafeLoad;
+                
+                // ИСПРАВЛЕНО: В норме 300px, при перегрузке сети падает до 180px!
+                radar.detectionRadius = isOverloaded ? 100 : 180; 
+            } else {
+                radar.isPowered = false;
+                radar.detectionRadius = 0; // Полностью обесточен
+            }
+        });
+
+        const isGlobalRadarActive = this.radars.some(r => r.isPowered);
+
+        this.turrets.forEach(turret => {
+            const depot = ammoDepots.find(a => {
+                const distSq = (a.x - turret.x) * (a.x - turret.x) + (a.y - turret.y) * (a.y - turret.y);
+                return distSq <= a.supplyRadius * a.supplyRadius;
+            });
+
+            if (depot) {
+                turret.isSupplied = true;
+                depot.connectedTurretsCount++;
+                turret.hasPenalty = depot.connectedTurretsCount > depot.maxSafeLoad;
+            } else {
+                turret.isSupplied = false;
+                turret.hasPenalty = false;
+                turret.currentAmmo = 0; 
+            }
+
+            turret.updateMovement(deltaTime);
+            turret.attack(allInvaders, deltaTime, isGlobalRadarActive);
+        });
+
+        // --- 3. ИНЖЕНЕРНЫЙ КОНТУР: Ремонт зданий под их честный maxHp ---
+        liveBuildings.forEach(targetBuilding => {
+            const healers = repairBays.filter(r => {
+                const distSq = (r.x - targetBuilding.x) * (r.x - targetBuilding.x) + (r.y - targetBuilding.y) * (r.y - targetBuilding.y);
+                return distSq <= r.repairRadius * r.repairRadius;
+            });
+
+            healers.forEach(bay => {
+                bay.connectedBuildingsCount++;
+                const isOverloaded = bay.connectedBuildingsCount > bay.maxSafeLoad;
+                const isSelfHeal = (bay as any) === targetBuilding;
+                let healAmount = isSelfHeal ? 0.1 : 0.04;
+                
+                if (isOverloaded) healAmount /= 3;
+
+                // ИСПРАВЛЕНО: Чиним здание строго до ЕГО индивидуального максимума (100 или 120)!
+                const maxLimit = (targetBuilding as any).maxHp || 100;
+                if (targetBuilding.hp < maxLimit) {
+                    targetBuilding.hp = Math.min(maxLimit, targetBuilding.hp + healAmount * deltaTime * 0.06);
+                }
+            });
+        });
+
+        // --- 4. ОБНОВЛЕНИЕ РАДАРОВ РЛС ---
         for (let i = 0; i < this.radars.length; i++) {
             const radar = this.radars[i];
+            
+            // Сначала вращаем приводы (если есть команда наведения от мыши)
             radar.rotate(deltaTime);
-            radar.scan(allInvaders, this); 
+            
+            // Если РЛС запитана — производим конусный скан воздуха
+            if (radar.isPowered) {
+                radar.scan(allInvaders, this);
+            }
         }
 
-        // 2. Батареи ПВО наводятся и стреляют по полному массиву роя
-        for (let i = 0; i < this.turrets.length; i++) {
-            const turret = this.turrets[i];
-            turret.updateMovement(deltaTime);
-            turret.attack(allInvaders, deltaTime); 
-        }
-
-        // 3. ИСПРАВЛЕНО НАДЁЖНО: Собираем уникальные видимые цели с защитой от дублирования!
+        // --- 5. РЕГИСТРАЦИЯ ОБНАРУЖЕННЫХ ЦЕЛЕЙ ---
         for (let i = 0; i < allInvaders.length; i++) {
             const invader = allInvaders[i];
             if (invader.isVisible && invader.hp > 0) {
