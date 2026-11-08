@@ -75,86 +75,94 @@ export class Player {
         const repairBays = liveBuildings.filter(b => b.type === 'REPAIR') as Array<RepairBay>;
         const ammoDepots = liveBuildings.filter(b => b.type === 'AMMO_DEPOT') as Array<AmmoDepot>;
 
+        // СБРОС СЧЕТЧИКОВ НАГРУЗКИ ПЕРЕД НАЧАЛОМ КАДРА
         powerNodes.forEach(p => p.connectedRadarsCount = 0);
         repairBays.forEach(r => r.connectedBuildingsCount = 0);
         ammoDepots.forEach(a => a.connectedTurretsCount = 0);
 
-// --- 1. ЭНЕРГОСЕТЬ: Двухпроходный расчет падения напряжения в сети ---
+        // =========================================================================
+        // --- 1. УМНАЯ БАЛАНСИРОВКА ЭНЕРГОСЕТИ (Для РЛС) ---
+        // =========================================================================
         
-        // ПРОХОД А: Подключаем радары и собираем ИТОГОВУЮ нагрузку на каждый Энергоблок
+        // ПРОХОД А: Распределяем радары по Энергоблокам с наименьшей текущей загрузкой
         this.radars.forEach(radar => {
-            const provider = powerNodes.find(p => {
-                const distSq = (p.x - radar.x) * (p.x - radar.x) + (p.y - radar.y) * (p.y - radar.y);
-                return distSq <= p.powerRadius * p.powerRadius; // 300px
+            // Находим ВСЕ живые энергоблоки, до которых радар дотягивается (радиус 300px)
+            const availableProviders = powerNodes.filter(p => {
+                const distSq = (p.x - radar.x) ** 2 + (p.y - radar.y) ** 2;
+                return distSq <= p.powerRadius * p.powerRadius;
             });
 
-            if (provider) {
+            if (availableProviders.length > 0) {
+                // СОРТИРОВКА: Выбираем блок, у которого прямо сейчас МЕНЬШЕ ВСЕГО подключенных потребителей!
+                availableProviders.sort((a, b) => a.connectedRadarsCount - b.connectedRadarsCount);
+                
+                const bestProvider = availableProviders[0]; // Самый свободный энергоблок
                 radar.isPowered = true;
-                provider.connectedRadarsCount++; // Накапливаем общую сумму мегаватт в кадре
-                // Сохраняем временную ссылку на блок питания внутри радара
-                (radar as any)._currentProvider = provider;
+                bestProvider.connectedRadarsCount++;
+                (radar as any)._currentProvider = bestProvider;
             } else {
                 radar.isPowered = false;
-                radar.detectionRadius = 0; // Полностью обесточен
+                radar.detectionRadius = 0; 
                 (radar as any)._currentProvider = null;
             }
         });
 
-        // ПРОХОД Б: Когда итоговая нагрузка известна, накладываем дефицит СИНХРОННО на всю сеть!
+        // ПРОХОД Б: Объявляем дефицит энергии (Voltage Drop) синхронно по сетям
         this.radars.forEach(radar => {
             const provider = (radar as any)._currentProvider;
-
             if (provider) {
-                // Если ИТОГОВАЯ нагрузка на этот узел превысила безопасный лимит N=3,
-                // напряжение падает ОДНОВРЕМЕННО на ВСЕХ подключенных радарах, сжимая их до 100px!
                 const isOverloaded = provider.connectedRadarsCount > provider.maxSafeLoad;
                 radar.detectionRadius = isOverloaded ? 100 : 180;
             }
         });
 
-        // Проверяем, работает ли в этом кадре хотя бы один радар на карте
         const isGlobalRadarActive = this.radars.some(r => r.isPowered && r.detectionRadius > 0);
 
-        // --- 2. ЛОГИКА БК: Двухпроходный расчет общего тактического дефицита ---
+        // =========================================================================
+        // --- 2. УМНАЯ БАЛАНСИРОВКА ЛОГИСТИКИ БК (Для ПВО) ---
+        // =========================================================================
         
-        // ПРОХОД А: Сначала просто привязываем пушки и собираем ИТОГОВУЮ нагрузку на каждый склад
+        // ПРОХОД А: Распределяем пушки по Складам БК с наименьшей текущей загрузкой
         this.turrets.forEach(turret => {
-            const depot = ammoDepots.find(a => {
+            // Находим ВСЕ живые склады БК, в радиусе снабжения которых стоит пушка (радиус 350px)
+            const availableDepots = ammoDepots.filter(a => {
                 const distSq = (a.x - turret.x) ** 2 + (a.y - turret.y) ** 2;
                 return distSq <= a.supplyRadius * a.supplyRadius;
             });
 
-            if (depot) {
+            if (availableDepots.length > 0) {
+                // СОРТИРОВКА: Направляем патронный кабель к самому СВОБОДНОМУ складу в этом кадре!
+                availableDepots.sort((a, b) => a.connectedTurretsCount - b.connectedTurretsCount);
+                
+                const bestDepot = availableDepots[0]; // Самый свободный арсенал снабжения
                 turret.isSupplied = true;
-                depot.connectedTurretsCount++; 
-                (turret as any)._currentDepot = depot; 
+                bestDepot.connectedTurretsCount++;
+                (turret as any)._currentDepot = bestDepot;
             } else {
                 turret.isSupplied = false;
                 turret.hasPenalty = false;
                 (turret as any)._currentDepot = null;
-                // ИСПРАВЛЕНО: СТРОКА turret.currentAmmo = 0 УБРАНА! Патроны остаются в машине!
             }
         });
 
-        // ПРОХОД Б: Когда итоговая нагрузка известна, объявляем дефицит ВСЕМ пушкам одновременно!
+        // ПРОХОД Б: Объявляем дефицит патронов синхронно по сетям перегруженных складов
         this.turrets.forEach(turret => {
             const depot = (turret as any)._currentDepot;
-            
             if (depot) {
-                // Если ИТОГОВАЯ нагрузка на этот склад превысила лимит N=3,
-                // то дефицит БК (hasPenalty = true) взводится ОДНОВРЕМЕННО у ВСЕХ пушек в этой сети!
                 turret.hasPenalty = depot.connectedTurretsCount > depot.maxSafeLoad;
             }
 
-            // Запускаем огневые и двигательные тики пушки ПВО
+            // Запускаем тики движения и стрельбы пушек ПВО
             turret.updateMovement(deltaTime);
             turret.attack(allInvaders, deltaTime, isGlobalRadarActive);
         });
 
-        // --- 3. ИНЖЕНЕРНЫЙ КОНТУР: Ремонт зданий под их честный maxHp ---
+        // =========================================================================
+        // --- 3. ИНЖЕНЕРНЫЙ КОНТУР (Ремонт зданий) ---
+        // =========================================================================
         liveBuildings.forEach(targetBuilding => {
             const healers = repairBays.filter(r => {
-                const distSq = (r.x - targetBuilding.x) * (r.x - targetBuilding.x) + (r.y - targetBuilding.y) * (r.y - targetBuilding.y);
+                const distSq = (r.x - targetBuilding.x) ** 2 + (r.y - targetBuilding.y) ** 2;
                 return distSq <= r.repairRadius * r.repairRadius;
             });
 
@@ -166,7 +174,6 @@ export class Player {
                 
                 if (isOverloaded) healAmount /= 3;
 
-                // ИСПРАВЛЕНО: Чиним здание строго до ЕГО индивидуального максимума (100 или 120)!
                 const maxLimit = (targetBuilding as any).maxHp || 100;
                 if (targetBuilding.hp < maxLimit) {
                     targetBuilding.hp = Math.min(maxLimit, targetBuilding.hp + healAmount * deltaTime * 0.06);
@@ -174,20 +181,16 @@ export class Player {
             });
         });
 
-        // --- 4. ОБНОВЛЕНИЕ РАДАРОВ РЛС ---
+        // 4. Покадровый скан воздуха выжившими радарами РЛС
         for (let i = 0; i < this.radars.length; i++) {
             const radar = this.radars[i];
-            
-            // Сначала вращаем приводы (если есть команда наведения от мыши)
             radar.rotate(deltaTime);
-            
-            // Если РЛС запитана — производим конусный скан воздуха
             if (radar.isPowered) {
                 radar.scan(allInvaders, this);
             }
         }
 
-        // --- 5. РЕГИСТРАЦИЯ ОБНАРУЖЕННЫХ ЦЕЛЕЙ ---
+        // 5. Запись обнаруженных целей для радиоразведки роя А*
         for (let i = 0; i < allInvaders.length; i++) {
             const invader = allInvaders[i];
             if (invader.isVisible && invader.hp > 0) {
@@ -196,5 +199,6 @@ export class Player {
                 }
             }
         }
-    }
+    } // Конец метода update
+
 }
