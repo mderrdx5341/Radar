@@ -3,3 +3,5 @@ node_modules/
 /coverage/
 www/*
 !www/index.html
+.scannerwork
+sonar-project.properties

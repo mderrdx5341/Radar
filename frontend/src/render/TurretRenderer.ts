@@ -8,7 +8,7 @@ export class TurretRenderer {
     }
 
     /**
-     * Отрисовка батареи ПВО с её радиусами и сектором обстрела
+     * Отрисовка батареи ПВО с её радиусами, конусом, лазером и HUD боекомплекта
      * @param turret Объект турели
      * @param selectedEntity Текущая выбранная сущность в игре (для отрисовки рамки)
      */
@@ -37,7 +37,6 @@ export class TurretRenderer {
         this.ctx.stroke();
 
         // 2. ПОСТОЯННЫЙ ПОДДСВЕЧЕННЫЙ ВНУТРЕННИЙ КРУГ ОБНАРУЖЕНИЯ (Радиус 45px)
-        // Виден всегда, чётко обозначая ближнюю автономную зону зрения ПВО
         this.ctx.beginPath();
         this.ctx.arc(turret.x, turret.y, turret.visionRadius, 0, Math.PI * 2);
         this.ctx.fillStyle = 'rgba(57, 211, 83, 0.03)';
@@ -49,7 +48,7 @@ export class TurretRenderer {
         // 3. Квадратный корпус турели
         this.ctx.fillStyle = '#238636';
         this.ctx.fillRect(turret.x - 8, turret.y - 8, 16, 16);
-        this.ctx.strokeStyle = '#39d353';
+        this.ctx.strokeStyle = selectedEntity === turret ? '#58a6ff' : '#39d353'; // Голубой неон при выборе
         this.ctx.lineWidth = 1.5;
         this.ctx.strokeRect(turret.x - 8, turret.y - 8, 16, 16);
             
@@ -66,7 +65,6 @@ export class TurretRenderer {
         this.ctx.stroke();
 
         // 5. Отрисовка боевого лазерного луча
-        // Проверяем тригонометрическое совпадение ствола и направления на цель перед вспышкой
         if (turret.currentTarget) {
             const dx = turret.currentTarget.x - turret.x;
             const dy = turret.currentTarget.y - turret.y;
@@ -76,7 +74,6 @@ export class TurretRenderer {
             while (fireDiff < -Math.PI) fireDiff += Math.PI * 2;
             while (fireDiff > Math.PI) fireDiff -= Math.PI * 2;
 
-            // Лазер бьёт СТРОГО из кончика ствола и только при точной доводке приводов башни
             if (Math.abs(fireDiff) <= 0.15) {
                 this.ctx.strokeStyle = '#ff7b72'; // Красный лазер
                 this.ctx.lineWidth = 2;
@@ -87,7 +84,58 @@ export class TurretRenderer {
             }
         }
 
-        // 6. Отрисовка рамки тактического выбора интерфейса
+        // =============================================================
+        // 6. ИНТЕГРАЦИЯ ТАКТИЧЕСКОГО HUD БОЕКОМПЛЕКТА И ПЕРЕЗАРЯДКИ
+        // =============================================================
+        const hudY = turret.y - 20; // Оптимальная высота, чтобы не перекрывать рамку выбора
+
+        if (!turret.isSupplied && turret.currentAmmo <= 0) {
+            // Сценарий А: ПВО находится ВНЕ радиуса Склада БК и полностью обезоружено
+            this.ctx.fillStyle = '#ff4444';
+            this.ctx.font = 'bold 10px monospace';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText('⚠️ НЕТ БК', turret.x, hudY);
+
+        } else if (turret.isReloading) {
+            // Сценарий Б: Дозарядка магазина со склада
+            const barWidth = 28;
+            const barHeight = 4;
+            const barX = turret.x - barWidth / 2;
+            const barY = hudY - 2;
+
+            // Красный подстилающий фон подложки
+            this.ctx.fillStyle = '#ff4444';
+            this.ctx.fillRect(barX, barY, barWidth, barHeight);
+
+            // Жёлтая покадровая полоса прогресса (от 0 до 1)
+            this.ctx.fillStyle = '#fbbf24';
+            this.ctx.fillRect(barX, barY, barWidth * turret.reloadProgress, barHeight);
+
+            // Рамка вокруг полоски прогресса
+            this.ctx.strokeStyle = '#0d1117';
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeRect(barX, barY, barWidth, barHeight);
+
+            // Текстовая маленькая подпись состояния над полосой
+            this.ctx.fillStyle = '#fbbf24';
+            this.ctx.font = 'bold 7px sans-serif';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText('RELOAD', turret.x, hudY - 6);
+
+        } else {
+            // Сценарий В: Пушка заряжена и готова вести огонь короткими очередями
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.font = 'bold 9px monospace';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            
+            // Если Склад БК перегружен, лимит ленты автоматически покажет "5" вместо "10"!
+            const maxCapacity = turret.hasPenalty ? 5 : turret.magazineSize;
+            this.ctx.fillText(`${turret.currentAmmo}/${maxCapacity}`, turret.x, hudY);
+        }
+
+        // 7. Отрисовка рамки тактического выбора интерфейса
         if (selectedEntity === turret) {
             this.drawSelectionFrame(turret.x, turret.y, '#39d353');
         }

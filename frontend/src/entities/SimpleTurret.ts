@@ -25,6 +25,11 @@ export class SimpleTurret {
     public isReloading: boolean = false;
     public reloadDuration: number = 2000; 
     public reloadTimer: number = 0;
+    public reloadProgress: number = 0; // Прогресс перезарядки от 0 до 1
+
+    // НОВОЕ: Таймер тактической дозарядки в режиме затишья
+    public idleReloadTimer: number = 0;
+    public readonly idleReloadDelay: number = 3000; // Пауза до начала дозарядки (3 секунды)
 
     public isSupplied: boolean = false;
     public hasPenalty: boolean = false;
@@ -74,18 +79,30 @@ export class SimpleTurret {
         }
     }
 
+    /**
+     * МОДЕРНИЗИРОВАННЫЙ ОГНЕВОЙ ТИК С АВТОДОЗАРЯДКОЙ В ЗАТИШЬЕ
+     */
     public attack(allInvaders: Array<SimpleInvader>, deltaTime: number, hasGlobalRadar: boolean): void {
+        // 1. Конвейер дозарядки ленты со Склада боеприпасов
         if (this.isReloading) {
             this.reloadTimer += deltaTime;
+            this.reloadProgress = Math.min(1, this.reloadTimer / this.reloadDuration);
+
             if (this.reloadTimer >= this.reloadDuration) {
                 this.isReloading = false;
                 this.reloadTimer = 0;
+                this.reloadProgress = 0;
+                this.idleReloadTimer = 0; // Сбрасываем таймер затишья
+                
                 const activeMagazineSize = this.hasPenalty ? 5 : this.magazineSize;
                 this.currentAmmo = this.isSupplied ? activeMagazineSize : 0;
             }
             return;
+        } else {
+            this.reloadProgress = 0;
         }
 
+        // Если магазин пуст, принудительно уходим на перезарядку (если есть склад)
         if (this.currentAmmo <= 0) {
             if (this.isSupplied) {
                 this.isReloading = true;
@@ -94,6 +111,7 @@ export class SimpleTurret {
             return;
         }
 
+        // 2. Сканирование и захват целей
         let bestTarget: SimpleInvader | null = null;
         let minDist = Infinity;
 
@@ -105,21 +123,15 @@ export class SimpleTurret {
             const dy = invader.y - this.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
 
-            // КРИТИЧЕСКИЙ ФИКС 1: Обнаружение всенаправленным кругом 45px.
-            // ИСПРАВЛЕНО: Убрана запрещенная перезапись invader.isVisible, 
-            // взвод таймера на 1 секунду легально включит нативный геттер БПЛА!
             if (dist <= this.visionRadius) {
                 invader.visibilityTimer = 1000;
             }
 
-            // Проверка конуса обстрела 70 пикселей
             if (dist <= this.attackRange) {
                 const targetAngle = Math.atan2(dy, dx);
                 let angleDiff = targetAngle - this.currentAngle;
                 angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
 
-                // КРИТИЧЕСКИЙ ФИКС 2: Если БПЛА в направленном конусе обстрела 70px вдоль ствола (fireDiff <= 0.3)
-                // ИСПРАВЛЕНО: Зажигаем видимость только через взвод visibilityTimer!
                 const isInAttackCone = Math.abs(angleDiff) <= 0.3;
                 if (isInAttackCone) {
                     invader.visibilityTimer = 1000;
@@ -136,14 +148,17 @@ export class SimpleTurret {
 
         this.currentTarget = bestTarget;
 
+        // 3. Обработка стрельбы или накопления таймера затишья
         if (this.currentTarget) {
+            // Цель есть: сбрасываем таймер затишья, пушка воюет
+            this.idleReloadTimer = 0;
+
             const dx = this.currentTarget.x - this.x;
             const dy = this.currentTarget.y - this.y;
             const targetAngle = Math.atan2(dy, dx);
             let fireDiff = targetAngle - this.currentAngle;
             fireDiff = Math.atan2(Math.sin(fireDiff), Math.cos(fireDiff));
 
-            // Проверка доворота орудия для ведения стрельбы снарядами
             if (Math.abs(fireDiff) <= 0.3) {
                 this.attackTimer += deltaTime;
                 if (this.attackTimer >= this.attackInterval) {
@@ -160,6 +175,23 @@ export class SimpleTurret {
                         this.currentTarget = null;
                     }
                 }
+            }
+        } else {
+            // ИСПРАВЛЕНО (ТАКТИЧЕСКАЯ ДОЗАРЯДКА): Целей нет. 
+            // Если магазин не полон и пушка подключена к складу — запускаем таймер покоя!
+            const maxCapacity = this.hasPenalty ? 5 : this.magazineSize;
+            
+            if (this.currentAmmo < maxCapacity && this.isSupplied) {
+                this.idleReloadTimer += deltaTime;
+                
+                // Если затишье длится дольше 3 секунд — запускаем автоматическую смену ленты!
+                if (this.idleReloadTimer >= this.idleReloadDelay) {
+                    this.isReloading = true;
+                    this.attackTimer = 0;
+                    console.log(`[Автоматика ПВО]: Наступило затишье. Запущена тактическая дозарядка ленты.`);
+                }
+            } else {
+                this.idleReloadTimer = 0; // Магазин полный — таймер покоя отдыхает
             }
         }
     }
