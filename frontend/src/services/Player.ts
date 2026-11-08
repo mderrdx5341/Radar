@@ -18,13 +18,14 @@ export class Player {
         this.radars = new Array<SimpleRadar>();
         this.turrets = new Array<SimpleTurret>();
         this.buildings = new Array<SimpleBuilding>();
-
+/*
         this.buildings.push(new PowerNode(400, 1120, 'Энергоблок ⚡'));
         this.buildings.push(new RepairBay(800, 1120, 'Ремонтный блок 🛠️'));
         this.buildings.push(new AmmoDepot(1200, 1120, 'Склад боеприпасов 📦'));
 
         this.radars.push(new SimpleRadar(800, 1000, 'РЛС-1'));
         this.turrets.push(new SimpleTurret(800, 1080, 'ПВО-1'));
+        */
     }
 
     public clearActiveTargets(): void {

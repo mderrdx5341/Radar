@@ -33,6 +33,14 @@ export class EnemySwarm {
      */
     public buildInitialFlightPlans(playerBuildings: Array<SimpleBuilding>): void {
         const hazards = this.routeManager.getDiscoveredHazards();
+
+        if (playerBuildings && playerBuildings.length > 0) {
+            this.spawnNodes.forEach(node => {
+                node.instantRecalculate(hazards, playerBuildings);
+            });
+        } else {
+            console.log('[ИИ Роя]: На тактической карте нет строений. Навигация переведена в режим ожидания развёртывания базы.');
+        }
         
         // Заставляем 10 точек взлёта мгновенно выдать готовые стартовые прямые линии
         this.spawnNodes.forEach(node => {
