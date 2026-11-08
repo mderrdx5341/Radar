@@ -30,8 +30,11 @@ export class InterfaceService {
                 'RADAR', 'TURRET', 'POWER', 'REPAIR', 'AMMO_DEPOT'
             ];
 
+            const shopX = 200; // Панель теперь начинается с 200px из-за левого сайдбара
+
             for (let i = 0; i < buttons.length; i++) {
-                const btnX = 20 + i * 130;
+                // ИСПРАВЛЕНО: Прибавляем shopX (200), чтобы мышка идеально попадала по кнопкам на новом месте!
+                const btnX = shopX + 20 + i * 130;
                 const btnWidth = 110;
 
                 if (screenX >= btnX && screenX <= btnX + btnWidth) {

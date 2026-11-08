@@ -47,6 +47,7 @@ export class CanvasRenderer {
     }
 
     public render(state: GameState, camera: CameraSystem, interfaceService: InterfaceService): void {
+        // ЖЕСТКАЯ ФИКСАЦИЯ РАЗМЕРОВ ЭКРАНА ДЛЯ ИСКЛЮЧЕНИЯ ВЫЛЕТА КООРДИНАТ UI В NaN
         const scrWidth = this.canvas.width;
         const scrHeight = this.canvas.height;
 
@@ -60,21 +61,19 @@ export class CanvasRenderer {
         
         const selectedEntity = interfaceService.activeController?.getEntity() || null;
 
-        // 1. Отрисовка контекстных неоновых радиусов при клике игрока (Без дебага)
+        // 1. Отрисовка контекстных неоновых радиусов и кабелей снабжения при клике ЛКМ
         if (selectedEntity) {
             this.ctx.save();
             this.ctx.lineWidth = 1.5;
 
             if (selectedEntity.type === 'POWER') {
-                // А) Мягкий синий радиус действия энергосети
                 this.ctx.strokeStyle = 'rgba(56, 139, 253, 0.35)';
                 this.ctx.beginPath();
                 this.ctx.arc(selectedEntity.x, selectedEntity.y, (selectedEntity as any).powerRadius || 300, 0, Math.PI * 2);
                 this.ctx.stroke();
 
-                // Б) Синие ЛЭП-пунктиры ко всем РЛС, которые питаются от этого узла
                 this.ctx.strokeStyle = 'rgba(56, 139, 253, 0.6)';
-                this.ctx.setLineDash([4, 4]); // Пунктирный неоновый кабель
+                this.ctx.setLineDash([4, 4]);
                 state.player.radars.forEach((radar: any) => {
                     const distSq = (selectedEntity.x - radar.x) ** 2 + (selectedEntity.y - radar.y) ** 2;
                     if (distSq <= (300 * 300)) {
@@ -86,17 +85,13 @@ export class CanvasRenderer {
                 });
                 
             } else if (selectedEntity.type === 'AMMO_DEPOT') {
-                // А) Жёлтый радиус логистического снабжения патронами
                 this.ctx.strokeStyle = 'rgba(242, 199, 68, 0.35)';
                 this.ctx.beginPath();
                 this.ctx.arc(selectedEntity.x, selectedEntity.y, (selectedEntity as any).supplyRadius || 350, 0, Math.PI * 2);
                 this.ctx.stroke();
 
-                // Б) Жёлтые конвейерные нити подвоза патронов к подключенным пушкам ПВО
                 const a = selectedEntity as any;
                 const isOver = a.connectedTurretsCount > a.maxSafeLoad;
-                
-                // Если Склад боеприпасов перегружен — нити снабжения мигают оранжевым цветом!
                 this.ctx.strokeStyle = isOver ? 'rgba(245, 158, 11, 0.7)' : 'rgba(242, 199, 68, 0.6)';
                 this.ctx.setLineDash([4, 4]);
                 
@@ -111,22 +106,15 @@ export class CanvasRenderer {
                 });
                 
             } else if (selectedEntity.type === 'REPAIR') {
-                // 1. Зелёный радиус инженерной поддержки рем-зоны
                 this.ctx.strokeStyle = 'rgba(57, 211, 83, 0.35)';
                 this.ctx.beginPath();
                 this.ctx.arc(selectedEntity.x, selectedEntity.y, (selectedEntity as any).repairRadius || 200, 0, Math.PI * 2);
                 this.ctx.stroke();
 
-                // 2. Зелёные лучи ремонта ТОЛЬКО к раненым внешним зданиям инфраструктуры
                 this.ctx.strokeStyle = 'rgba(57, 211, 83, 0.5)';
-                this.ctx.setLineDash([4, 4]); // Пунктирный луч работы
-                
+                this.ctx.setLineDash([4, 4]);
                 state.player.buildings.forEach((b: any) => {
-                    // Исключаем самопочинку (чтобы луч не рисовался внутрь себя) 
-                    // и полностью изолируем от соседних рем-блоков по RULE 1!
                     if (b === selectedEntity || b.type === 'REPAIR' || b.isDestroyed) return;
-                    
-                    // Луч загорается строго тогда, когда здание ранено и инженеры реально работают!
                     const maxLimit = b.maxHp || 100;
                     if (b.hp < maxLimit) {
                         const distSq = (selectedEntity.x - b.x) ** 2 + (selectedEntity.y - b.y) ** 2;
@@ -142,7 +130,7 @@ export class CanvasRenderer {
             this.ctx.restore();
         }
 
-        // 2. Слой ИИ дебага (Кнопки K и L)
+        // 2. Слой ИИ отладки фронта (Клавиши K и L)
         if (state.isDebugMode || state.isWaveDebugMode) {
             this.debugRenderer.draw(
                 state.enemySwarm.invaders, 
@@ -153,26 +141,28 @@ export class CanvasRenderer {
             );
         }
 
-        // 3. АРХИТЕКТУРНО ЧИСТАЯ ОТРИСОВКА: Каждое здание рисуется строго своим классом
-        state.player.buildings.forEach(building => {
-            if (building.type === 'POWER') this.powerNodeRenderer.draw(building as any);
-            else if (building.type === 'REPAIR') this.repairBayRenderer.draw(building as any);
-            else if (building.type === 'AMMO_DEPOT') this.ammoDepotRenderer.draw(building as any);
+        // 3. Покомпонентная чистая отрисовка инфраструктуры построек базы
+        state.player.buildings.forEach((building: any) => {
+            if (building.type === 'POWER') this.powerNodeRenderer.draw(building);
+            else if (building.type === 'REPAIR') this.repairBayRenderer.draw(building);
+            else if (building.type === 'AMMO_DEPOT') this.ammoDepotRenderer.draw(building);
             else if (building.type === 'HARVESTER') this.resourceHarvesterRenderer.draw(building);
         });
         
-        // 4. Боевые единицы игрока
-        state.player.radars.forEach(radar => {
+        // 4. Отрисовка радарных станций
+        state.player.radars.forEach((radar: any) => {
             this.radarRenderer.draw(radar, selectedEntity);
         });
 
-        state.player.turrets.forEach(turret => {
+        // 5. Отрисовка пушек ПВО с HUD-счётчиками патронов
+        state.player.turrets.forEach((turret: any) => {
             this.turretRenderer.draw(turret, selectedEntity);
         });
         
-        // 5. Отрисовка вражеского роя БПЛА
+        // 6. Отрисовка роя БПЛА камикадзе
         this.invaderRenderer.drawAll(state.enemySwarm.invaders);
 
+        // 7. Отрисовка призрака чертежа за курсором мыши
         if (state.player.placement.currentBuildType && !state.isGameOver) {
             this.uiRenderer.drawGhostBuilding(
                 state.player.placement.currentBuildType, 
@@ -183,7 +173,14 @@ export class CanvasRenderer {
 
         this.ctx.restore();
 
+        // =============================================================
+        // 4. СЛОЙ ИНТЕРФЕЙСА HUD С СИНХРОНИЗИРОВАННЫМИ ПАРАМЕТРАМИ РАЗМЕРОВ
+        // =============================================================
+        // Отрисовка нижнего магазина кнопок (ужатого под сайдбар)
         this.uiRenderer.drawShopUI(scrWidth, scrHeight, state.isPaused && !state.isGameOver);
+
+        // СБОРКА ИСПРАВЛЕНА: Прокидываем размеры и состояние в правый Sidebar телеметрии!
+        this.uiRenderer.drawRightTelemetrySidebar(scrWidth, scrHeight, state);
 
         if (selectedEntity) {
             this.uiRenderer.drawSelectedNameUI(scrWidth, selectedEntity.name);
@@ -191,15 +188,16 @@ export class CanvasRenderer {
 
         this.uiRenderer.drawScoreUI(state.score);
 
-        if (state.isPaused && !state.isGameOver) {
-            this.uiRenderer.drawPauseOverlay(scrWidth, scrHeight);
-        }
-
         if (state.isWaveDebugMode) {
             this.ctx.fillStyle = '#f2c744';
             this.ctx.font = 'bold 12px monospace';
             this.ctx.textAlign = 'left';
             this.ctx.fillText(' ПОКАДРОВЫЙ АНАЛИЗ ФРОНТА А* АКТИВЕН (КЛАВИША L) ', 20, 50);
+        }
+
+        // Отреставрированный баннер паузы по центру сверху
+        if (state.isPaused && !state.isGameOver) {
+            this.uiRenderer.drawPauseOverlay(scrWidth, scrHeight);
         }
 
         if (state.isGameOver) {
