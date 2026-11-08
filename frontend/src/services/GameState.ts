@@ -53,13 +53,13 @@ export class GameState {
         this.interfaceService.update(input, worldMouse);
 
         if (this.isPaused || this.isGameOver) return;
-
+/*
         const powerNodes = this.player.buildings.filter(b => b.type === 'POWER');
         if (powerNodes.every(b => b.isDestroyed) || this.player.buildings.every(b => b.isDestroyed)) {
             this.isGameOver = true;
             return;
         }
-
+*/
         // Очищаем список целей перед кадром
         this.player.clearActiveTargets();
 

@@ -61,7 +61,7 @@ export class CanvasRenderer {
         const selectedEntity = interfaceService.activeController?.getEntity() || null;
 
         // 1. Отрисовка контекстных неоновых радиусов при клике игрока (Без дебага)
- if (selectedEntity) {
+        if (selectedEntity) {
             this.ctx.save();
             this.ctx.lineWidth = 1.5;
 
@@ -111,23 +111,31 @@ export class CanvasRenderer {
                 });
                 
             } else if (selectedEntity.type === 'REPAIR') {
-                // А) Зелёный радиус инженерной поддержки рем-зоны
+                // 1. Зелёный радиус инженерной поддержки рем-зоны
                 this.ctx.strokeStyle = 'rgba(57, 211, 83, 0.35)';
                 this.ctx.beginPath();
                 this.ctx.arc(selectedEntity.x, selectedEntity.y, (selectedEntity as any).repairRadius || 200, 0, Math.PI * 2);
                 this.ctx.stroke();
 
-                // Б) Зелёные пунктирные рем-лучи ко всем чинящимся зданиям базы
+                // 2. Зелёные лучи ремонта ТОЛЬКО к раненым внешним зданиям инфраструктуры
                 this.ctx.strokeStyle = 'rgba(57, 211, 83, 0.5)';
-                this.ctx.setLineDash([4, 4]);
+                this.ctx.setLineDash([4, 4]); // Пунктирный луч работы
+                
                 state.player.buildings.forEach((b: any) => {
-                    if (b === selectedEntity || b.isDestroyed) return;
-                    const distSq = (selectedEntity.x - b.x) ** 2 + (selectedEntity.y - b.y) ** 2;
-                    if (distSq <= (200 * 200)) {
-                        this.ctx.beginPath();
-                        this.ctx.moveTo(selectedEntity.x, selectedEntity.y);
-                        this.ctx.lineTo(b.x, b.y);
-                        this.ctx.stroke();
+                    // Исключаем самопочинку (чтобы луч не рисовался внутрь себя) 
+                    // и полностью изолируем от соседних рем-блоков по RULE 1!
+                    if (b === selectedEntity || b.type === 'REPAIR' || b.isDestroyed) return;
+                    
+                    // Луч загорается строго тогда, когда здание ранено и инженеры реально работают!
+                    const maxLimit = b.maxHp || 100;
+                    if (b.hp < maxLimit) {
+                        const distSq = (selectedEntity.x - b.x) ** 2 + (selectedEntity.y - b.y) ** 2;
+                        if (distSq <= (200 * 200)) {
+                            this.ctx.beginPath();
+                            this.ctx.moveTo(selectedEntity.x, selectedEntity.y);
+                            this.ctx.lineTo(b.x, b.y);
+                            this.ctx.stroke();
+                        }
                     }
                 });
             }

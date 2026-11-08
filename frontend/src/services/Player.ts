@@ -157,48 +157,50 @@ export class Player {
             turret.attack(allInvaders, deltaTime, isGlobalRadarActive);
         });
 
-        // =========================================================================
-        // --- 3. ИНЖЕНЕРНЫЙ КОНТУР (Ремонт зданий) ---
+// =========================================================================
+        // --- 3. УМНЫЙ ИНЖЕНЕРНЫЙ КОНТУР (Изолированный ремонт зданий) ---
         // =========================================================================
         liveBuildings.forEach(targetBuilding => {
-            const healers = repairBays.filter(r => {
-                const distSq = (r.x - targetBuilding.x) ** 2 + (r.y - targetBuilding.y) ** 2;
-                return distSq <= r.repairRadius * r.repairRadius;
+            // Ищем все живые Ремонтные блоки в радиусе 200px
+            const healers = repairBays.filter(bay => {
+                const distSq = (bay.x - targetBuilding.x) ** 2 + (bay.y - targetBuilding.y) ** 2;
+                return distSq <= bay.repairRadius * bay.repairRadius;
             });
 
             healers.forEach(bay => {
-                bay.connectedBuildingsCount++;
-                const isOverloaded = bay.connectedBuildingsCount > bay.maxSafeLoad;
-                const isSelfHeal = (bay as any) === targetBuilding;
-                let healAmount = isSelfHeal ? 0.1 : 0.04;
-                
-                if (isOverloaded) healAmount /= 3;
-
-                const maxLimit = (targetBuilding as any).maxHp || 100;
-                if (targetBuilding.hp < maxLimit) {
-                    targetBuilding.hp = Math.min(maxLimit, targetBuilding.hp + healAmount * deltaTime * 0.06);
+                // RULE 1: Полная изоляция. Ремонтные блоки категорически не чинят другие ремонтные блоки!
+                if (targetBuilding.type === 'REPAIR' && bay !== targetBuilding) {
+                    return; // Соседний рем-блок для инженеров — невидимка
                 }
+
+                const isSelfHeal = bay === targetBuilding;
+
+                // Накручиваем счетчик нагрузки бригады ТОЛЬКО если здание ранено И это не самопочинка!
+                if (targetBuilding.hp < (targetBuilding as any).maxHp) {
+                    if (!isSelfHeal) {
+                        bay.connectedBuildingsCount++;
+                    }
+                } else {
+                    return; // Здание полностью целое, инженеры на него не отвлекаются
+                }
+
+                // Рассчитываем итоговую нагрузку (дефицит инженеров N=3)
+                const isOverloaded = bay.connectedBuildingsCount > bay.maxSafeLoad;
+
+                // Базовые коэффициенты скорости: самопочинка в 2.5 раза быстрее внешних работ
+                let healAmount = isSelfHeal ? 0.1 : 0.04;
+
+                // RULE 3: Если бригады перегружены чужими объектами — скорость внешнего ремонта падает в 3 раза!
+                // Но скорость самопочинки (isSelfHeal) остаётся максимальной, удерживая узел на плаву!
+                if (isOverloaded && !isSelfHeal) {
+                    healAmount /= 3;
+                }
+
+                // Накатываем покадровое восстановление прочности
+                const maxLimit = (targetBuilding as any).maxHp || 100;
+                targetBuilding.hp = Math.min(maxLimit, targetBuilding.hp + healAmount * deltaTime * 0.06);
             });
         });
-
-        // 4. Покадровый скан воздуха выжившими радарами РЛС
-        for (let i = 0; i < this.radars.length; i++) {
-            const radar = this.radars[i];
-            radar.rotate(deltaTime);
-            if (radar.isPowered) {
-                radar.scan(allInvaders, this);
-            }
-        }
-
-        // 5. Запись обнаруженных целей для радиоразведки роя А*
-        for (let i = 0; i < allInvaders.length; i++) {
-            const invader = allInvaders[i];
-            if (invader.isVisible && invader.hp > 0) {
-                if (!this.activeTargets.includes(invader)) {
-                    this.activeTargets.push(invader);
-                }
-            }
-        }
     } // Конец метода update
 
 }
