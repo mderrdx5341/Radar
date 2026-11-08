@@ -10,7 +10,7 @@ export class GameState {
     public interfaceService: InterfaceService;
 
     public score: number = 0;
-    public isPaused: boolean = false;
+    public isPaused: boolean = true;
     public isGameOver: boolean = false;
 
     public isDebugMode: boolean = false;
@@ -26,7 +26,7 @@ export class GameState {
 
     public initSession(): void {
         this.score = 0;
-        this.isPaused = false;
+        this.isPaused = true;
         this.isGameOver = false;
         this.isDebugMode = false;
         this.isWaveDebugMode = false;

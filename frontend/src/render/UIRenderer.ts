@@ -244,25 +244,42 @@ export class UIRenderer {
         this.ctx.restore();
     }
 
-    /**
-     * Отрисовка центрального полупрозрачного оверлея паузы
+  /**
+     * ИСПРАВЛЕНО И ОБЪЕДИНЕНО: Отрисовка компактного верхнего оранжевого баннера паузы.
+     * Экран НЕ блюрится и НЕ затемняется, освобождая всё поле боя для застройки!
      */
-    private drawPauseOverlay(width: number, height: number): void {
+    public drawPauseOverlay(width: number, height: number): void {
         this.ctx.save();
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
-        this.ctx.fillRect(0, 0, width, height - 60);
 
-        this.ctx.fillStyle = 'rgba(22, 27, 34, 0.9)';
-        this.ctx.fillRect(width / 2 - 160, height / 2 - 40, 320, 60);
+        // 1. Геометрия баннера по центру верхней границы экрана (Ширина 420px, Высота 46px)
+        const bannerWidth = 420;
+        const bannerHeight = 46;
+        const bannerX = width / 2 - bannerWidth / 2;
+        const bannerY = 15; // Отступ 15 пикселей от верхнего края экрана
+
+        // Корпус баннера: Полупрозрачный фирменный тёмный фон для идеальной читаемости
+        this.ctx.fillStyle = 'rgba(22, 27, 34, 0.92)';
+        this.ctx.fillRect(bannerX, bannerY, bannerWidth, bannerHeight);
+
+        // Контур баннера: Ваша оригинальная оранжево-неоновая рамка толщиной 1.5px
         this.ctx.strokeStyle = '#d67422';
         this.ctx.lineWidth = 1.5;
-        this.ctx.strokeRect(width / 2 - 160, height / 2 - 40, 320, 60);
+        this.ctx.strokeRect(bannerX, bannerY, bannerWidth, bannerHeight);
 
+        // 2. СТРОКА 1: Главный заголовок паузы (Ваш оригинальный сочный оранжевый цвет #e38e44)
         this.ctx.fillStyle = '#e38e44';
-        this.ctx.font = 'bold 14px sans-serif';
+        this.ctx.font = 'bold 13px sans-serif';
         this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
-        this.ctx.fillText('ТАКТИЧЕСКАЯ ПАУЗА ACTIVATED', width / 2, height / 2 - 10);
+        this.ctx.textBaseline = 'top';
+        this.ctx.fillText('[ ⏸ ТАКТИЧЕСКАЯ ПАУЗА ]', width / 2, bannerY + 6);
+
+        // 3. СТРОКА 2: Вспомогательная инструкция для командира (Аккуратный светлый шрифт)
+        this.ctx.fillStyle = '#c9d1d9';
+        this.ctx.font = '9px monospace';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+        this.ctx.fillText('ФРОНТ ЗАМОРОЖЕН • НАЖМИТЕ [ SPACE ] ДЛЯ ЗАПУСКА ВРЕМЕНИ', width / 2, bannerY + 26);
+
         this.ctx.restore();
     }
 }

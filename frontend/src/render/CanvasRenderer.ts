@@ -191,6 +191,10 @@ export class CanvasRenderer {
 
         this.uiRenderer.drawScoreUI(state.score);
 
+        if (state.isPaused && !state.isGameOver) {
+            this.uiRenderer.drawPauseOverlay(scrWidth, scrHeight);
+        }
+
         if (state.isWaveDebugMode) {
             this.ctx.fillStyle = '#f2c744';
             this.ctx.font = 'bold 12px monospace';
