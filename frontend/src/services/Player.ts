@@ -101,22 +101,40 @@ export class Player {
 
         const isGlobalRadarActive = this.radars.some(r => r.isPowered);
 
+        // --- 2. ЛОГИКА БК: Двухпроходный расчет общего тактического дефицита ---
+        
+        // ПРОХОД А: Сначала просто привязываем пушки и собираем ИТОГОВУЮ нагрузку на каждый склад
         this.turrets.forEach(turret => {
+            // Ищем склад боеприпасов в радиусе 350px
             const depot = ammoDepots.find(a => {
-                const distSq = (a.x - turret.x) * (a.x - turret.x) + (a.y - turret.y) * (a.y - turret.y);
+                const distSq = (a.x - turret.x) ** 2 + (a.y - turret.y) ** 2;
                 return distSq <= a.supplyRadius * a.supplyRadius;
             });
 
             if (depot) {
                 turret.isSupplied = true;
-                depot.connectedTurretsCount++;
-                turret.hasPenalty = depot.connectedTurretsCount > depot.maxSafeLoad;
+                depot.connectedTurretsCount++; // Склад накапливает суммарный счетчик
+                // Временно сохраняем ссылку на склад внутри пушки (для прохода Б)
+                (turret as any)._currentDepot = depot; 
             } else {
                 turret.isSupplied = false;
                 turret.hasPenalty = false;
+                (turret as any)._currentDepot = null;
                 turret.currentAmmo = 0; 
             }
+        });
 
+        // ПРОХОД Б: Когда итоговая нагрузка известна, объявляем дефицит ВСЕМ пушкам одновременно!
+        this.turrets.forEach(turret => {
+            const depot = (turret as any)._currentDepot;
+            
+            if (depot) {
+                // Если ИТОГОВАЯ нагрузка на этот склад превысила лимит N=3,
+                // то дефицит БК (hasPenalty = true) взводится ОДНОВРЕМЕННО у ВСЕХ пушек в этой сети!
+                turret.hasPenalty = depot.connectedTurretsCount > depot.maxSafeLoad;
+            }
+
+            // Запускаем огневые и двигательные тики пушки ПВО
             turret.updateMovement(deltaTime);
             turret.attack(allInvaders, deltaTime, isGlobalRadarActive);
         });
