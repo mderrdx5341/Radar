@@ -79,27 +79,41 @@ export class Player {
         repairBays.forEach(r => r.connectedBuildingsCount = 0);
         ammoDepots.forEach(a => a.connectedTurretsCount = 0);
 
-        // --- 1. ЭНЕРГОСЕТЬ: Распределение РЛС по Энергоблокам ---
+// --- 1. ЭНЕРГОСЕТЬ: Двухпроходный расчет падения напряжения в сети ---
+        
+        // ПРОХОД А: Подключаем радары и собираем ИТОГОВУЮ нагрузку на каждый Энергоблок
         this.radars.forEach(radar => {
             const provider = powerNodes.find(p => {
                 const distSq = (p.x - radar.x) * (p.x - radar.x) + (p.y - radar.y) * (p.y - radar.y);
-                return distSq <= p.powerRadius * p.powerRadius;
+                return distSq <= p.powerRadius * p.powerRadius; // 300px
             });
 
             if (provider) {
                 radar.isPowered = true;
-                provider.connectedRadarsCount++;
-                const isOverloaded = provider.connectedRadarsCount > provider.maxSafeLoad;
-                
-                // ИСПРАВЛЕНО: В норме 300px, при перегрузке сети падает до 180px!
-                radar.detectionRadius = isOverloaded ? 100 : 180; 
+                provider.connectedRadarsCount++; // Накапливаем общую сумму мегаватт в кадре
+                // Сохраняем временную ссылку на блок питания внутри радара
+                (radar as any)._currentProvider = provider;
             } else {
                 radar.isPowered = false;
                 radar.detectionRadius = 0; // Полностью обесточен
+                (radar as any)._currentProvider = null;
             }
         });
 
-        const isGlobalRadarActive = this.radars.some(r => r.isPowered);
+        // ПРОХОД Б: Когда итоговая нагрузка известна, накладываем дефицит СИНХРОННО на всю сеть!
+        this.radars.forEach(radar => {
+            const provider = (radar as any)._currentProvider;
+
+            if (provider) {
+                // Если ИТОГОВАЯ нагрузка на этот узел превысила безопасный лимит N=3,
+                // напряжение падает ОДНОВРЕМЕННО на ВСЕХ подключенных радарах, сжимая их до 100px!
+                const isOverloaded = provider.connectedRadarsCount > provider.maxSafeLoad;
+                radar.detectionRadius = isOverloaded ? 100 : 180;
+            }
+        });
+
+        // Проверяем, работает ли в этом кадре хотя бы один радар на карте
+        const isGlobalRadarActive = this.radars.some(r => r.isPowered && r.detectionRadius > 0);
 
         // --- 2. ЛОГИКА БК: Двухпроходный расчет общего тактического дефицита ---
         
