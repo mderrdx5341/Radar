@@ -151,6 +151,18 @@ export class Player {
 
         const isGlobalRadarActive = this.radars.some(r => r.isPowered && r.detectionRadius > 0);
 
+        this.radars.forEach(radar => {
+            // Плавный поворот антенны РЛС по таймеру (вызываем метод из вашего класса)
+            if (typeof (radar as any).rotate === 'function') {
+                (radar as any).rotate(deltaTime);
+            } else if (typeof (radar as any).update === 'function') {
+                (radar as any).update(deltaTime);
+            }
+
+            // Вызываем ваш оригинальный метод scan, передавая массив БПЛА и контекст игрока (this)
+            radar.scan(allInvaders, this);
+        });
+
         // =========================================================================
         // --- 2. УМНАЯ БАЛАНСИРОВКА ЛОГИСТИКИ БК (Для ПВО) ---
         // =========================================================================
