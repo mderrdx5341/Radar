@@ -38,36 +38,68 @@ export class Player {
         }
     }
 
-/**
-     * Честное размещение построек из меню HUD-панели на тактическую карту
+   /**
+     * ИСПРАВЛЕНО: Честное размещение построек из меню HUD-панели на тактическую карту.
+     * Объекты защищены от NaN, строятся в идеальный упор с зазором +2px, но не накладываются друг на друга!
      */
     public tryPlaceBuilding(worldX: number, worldY: number): void {
         if (!this.placement.currentBuildType) return;
 
-        // ИСПРАВЛЕНО: Уменьшили радиус коллизии до 12px (диаметр 24px).
-        // Теперь пушки ПВО и радары РЛС можно ставить вплотную друг к другу!
-        const tooClose = this.buildings.some(b => !b.isDestroyed && (b.x - worldX) ** 2 + (b.y - worldY) ** 2 < 12 * 12)
-            || this.radars.some(r => (r.x - worldX) ** 2 + (r.y - worldY) ** 2 < 12 * 12)
-            || this.turrets.some(t => (t.x - worldX) ** 2 + (t.y - worldY) ** 2 < 12 * 12);
-
-        if (!tooClose) {
-            const type = this.placement.currentBuildType;
-            
-            if (type === 'RADAR') {
-                this.radars.push(new SimpleRadar(worldX, worldY, `РЛС-${this.radars.length + 1}`));
-            } else if (type === 'TURRET') {
-                this.turrets.push(new SimpleTurret(worldX, worldY, `ПВО-${this.turrets.length + 1}`));
-            } else if (type === 'POWER') {
-                this.buildings.push(new PowerNode(worldX, worldY, `Энергоблок-${this.buildings.length + 1}`));
-            } else if (type === 'REPAIR') {
-                this.buildings.push(new RepairBay(worldX, worldY, `Рем-Блок-${this.buildings.length + 1}`));
-            } else if (type === 'AMMO_DEPOT') {
-                this.buildings.push(new AmmoDepot(worldX, worldY, `Склад БК-${this.buildings.length + 1}`));
-            }
-
-            console.log(`[Строительство]: Успешно развернут объект ${type}`);
-            this.placement.cancelBuilding(); 
+        // 1. Фиксируем точный радиус коллизии для строящегося "призрака" объекта
+        const currentType = this.placement.currentBuildType;
+        let currentRadius = 10; // Оригинальный радиус пушек ПВО и станций РЛС (корпус 20x20px)
+        
+        if (currentType === 'POWER' || currentType === 'REPAIR' || currentType === 'AMMO_DEPOT') {
+            currentRadius = 20; // Оригинальный радиус крупных зданий (корпус 40x40px)
         }
+
+        // 2. БЕЗОПАСНАЯ ПРОВЕРКА КОЛЛИЗИЙ (ИСКЛЮЧЕНО ДЕЛЕНИЕ НА undefined И NaN)
+        
+        // А) Проверяем наложение на существующие здания базы (Энергоблоки, Рем-блоки, Склады БК)
+        const hitBuilding = this.buildings.some(b => {
+            const distSq = (b.x - worldX) ** 2 + (b.y - worldY) ** 2;
+            const bRadius = b.radius || 20; // Если свойства нет, жестко страхуем константой 20
+            const minClearance = bRadius + currentRadius + 2; // Сумма радиусов + 2 пикселя зазора
+            return distSq < (minClearance * minClearance);
+        });
+
+        // Б) Проверяем наложение на радарные станции РЛС (их радиус корпуса всегда равен 10px)
+        const hitRadar = this.radars.some(r => {
+            const distSq = (r.x - worldX) ** 2 + (r.y - worldY) ** 2;
+            const minClearance = 10 + currentRadius + 2; // 10px (радиус РЛС) + радиус призрака + 2px
+            return distSq < (minClearance * minClearance);
+        });
+
+        // В) Проверяем наложение на батареи ПВО (их радиус корпуса всегда равен 10px)
+        const hitTurret = this.turrets.some(t => {
+            const distSq = (t.x - worldX) ** 2 + (t.y - worldY) ** 2;
+            const minClearance = 10 + currentRadius + 2; // 10px (радиус ПВО) + радиус призрака + 2px
+            return distSq < (minClearance * minClearance);
+        });
+
+        // Если обнаружено физическое пересечение — блокируем установку
+        if (hitBuilding || hitRadar || hitTurret) {
+            console.log('[Строительство]: Размещение заблокировано! Объекты пересекаются или стоят слишком близко.');
+            return;
+        }
+
+        // 3. РАЗМЕЩЕНИЕ ОБЪЕКТА (Если площадка свободна)
+        const type = this.placement.currentBuildType;
+        
+        if (type === 'RADAR') {
+            this.radars.push(new SimpleRadar(worldX, worldY, `РЛС-${this.radars.length + 1}`));
+        } else if (type === 'TURRET') {
+            this.turrets.push(new SimpleTurret(worldX, worldY, `ПВО-${this.turrets.length + 1}`));
+        } else if (type === 'POWER') {
+            this.buildings.push(new PowerNode(worldX, worldY, `Энергоблок-${this.buildings.length + 1}`));
+        } else if (type === 'REPAIR') {
+            this.buildings.push(new RepairBay(worldX, worldY, `Рем-Блок-${this.buildings.length + 1}`));
+        } else if (type === 'AMMO_DEPOT') {
+            this.buildings.push(new AmmoDepot(worldX, worldY, `Склад БК-${this.buildings.length + 1}`));
+        }
+
+        console.log(`[Строительство]: Успешно развернут объект ${type}`);
+        this.placement.cancelBuilding(); // Очищаем курсор после успешной установки
     }
 
     public update(deltaTime: number, allInvaders: Array<SimpleInvader>): void {
