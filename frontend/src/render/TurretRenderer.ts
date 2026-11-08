@@ -87,15 +87,26 @@ export class TurretRenderer {
         // =============================================================
         // 6. ИНТЕГРАЦИЯ ТАКТИЧЕСКОГО HUD БОЕКОМПЛЕКТА И ПЕРЕЗАРЯДКИ
         // =============================================================
-        const hudY = turret.y - 20; // Оптимальная высота, чтобы не перекрывать рамку выбора
+        const hudY = turret.y - 20; 
 
-        if (!turret.isSupplied && turret.currentAmmo <= 0) {
-            // Сценарий А: ПВО находится ВНЕ радиуса Склада БК и полностью обезоружено
-            this.ctx.fillStyle = '#ff4444';
-            this.ctx.font = 'bold 10px monospace';
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'middle';
-            this.ctx.fillText('⚠️ НЕТ БК', turret.x, hudY);
+        if (!turret.isSupplied) {
+            // Пушка находится ВНЕ радиуса действия Склада БК (Автономный марш-бросок)
+            if (turret.currentAmmo <= 0) {
+                // Сценарий А1: Патроны кончились полностью
+                this.ctx.fillStyle = '#ff4444'; // Критический красный
+                this.ctx.font = 'bold 10px monospace';
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                this.ctx.fillText('⚠️ НЕТ БК', turret.x, hudY);
+            } else {
+                // Сценарий А2: ИСПРАВЛЕНО ПОД НЮАНС ИГРОКА! Патроны ещё есть, пушка стреляет,
+                // но горит предупреждающий оранжево-жёлтый маркер автономности и остаток снарядов!
+                this.ctx.fillStyle = '#f59e0b'; 
+                this.ctx.font = 'bold 10px monospace';
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                this.ctx.fillText(`⚠️ ${turret.currentAmmo}`, turret.x, hudY);
+            }
 
         } else if (turret.isReloading) {
             // Сценарий Б: Дозарядка магазина со склада
@@ -104,33 +115,28 @@ export class TurretRenderer {
             const barX = turret.x - barWidth / 2;
             const barY = hudY - 2;
 
-            // Красный подстилающий фон подложки
             this.ctx.fillStyle = '#ff4444';
             this.ctx.fillRect(barX, barY, barWidth, barHeight);
 
-            // Жёлтая покадровая полоса прогресса (от 0 до 1)
             this.ctx.fillStyle = '#fbbf24';
             this.ctx.fillRect(barX, barY, barWidth * turret.reloadProgress, barHeight);
 
-            // Рамка вокруг полоски прогресса
             this.ctx.strokeStyle = '#0d1117';
             this.ctx.lineWidth = 1;
             this.ctx.strokeRect(barX, barY, barWidth, barHeight);
 
-            // Текстовая маленькая подпись состояния над полосой
             this.ctx.fillStyle = '#fbbf24';
             this.ctx.font = 'bold 7px sans-serif';
             this.ctx.textAlign = 'center';
             this.ctx.fillText('RELOAD', turret.x, hudY - 6);
 
         } else {
-            // Сценарий В: Пушка заряжена и готова вести огонь короткими очередями
+            // Сценарий В: Обычная штатная стрельба в зоне склада
             this.ctx.fillStyle = '#ffffff';
             this.ctx.font = 'bold 9px monospace';
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
             
-            // Если Склад БК перегружен, лимит ленты автоматически покажет "5" вместо "10"!
             const maxCapacity = turret.hasPenalty ? 5 : turret.magazineSize;
             this.ctx.fillText(`${turret.currentAmmo}/${maxCapacity}`, turret.x, hudY);
         }

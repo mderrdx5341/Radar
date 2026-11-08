@@ -29,7 +29,7 @@ export class SimpleTurret {
     public readonly idleReloadDelay: number = 3000; 
 
     public isSupplied: boolean = false;
-    public hasPenalty: boolean = false; // Флаг перегрузки склада, теперь влияет рантайм!
+    public hasPenalty: boolean = false; 
 
     constructor(x: number, y: number, name: string) {
         this.x = x;
@@ -77,7 +77,6 @@ export class SimpleTurret {
     }
 
     public attack(allInvaders: Array<SimpleInvader>, deltaTime: number, hasGlobalRadar: boolean): void {
-        // Вычисляем текущий динамический потолок магазина (10 в норме, 5 при общем дефиците склада)
         const currentMaxCapacity = this.hasPenalty ? 5 : this.magazineSize;
 
         // 1. Конвейер дозарядки ленты со Склада боеприпасов
@@ -90,8 +89,6 @@ export class SimpleTurret {
                 this.reloadTimer = 0;
                 this.reloadProgress = 0;
                 this.idleReloadTimer = 0; 
-                
-                // После честной перезарядки пушка получает строго дефицитный лимит (5) или норму (10)
                 this.currentAmmo = this.isSupplied ? currentMaxCapacity : 0;
             }
             return;
@@ -99,7 +96,8 @@ export class SimpleTurret {
             this.reloadProgress = 0;
         }
 
-        // НЮАНС: Пушка уходит на экстренную дозарядку по нулю ПАТРОНОВ только если у неё нет излишков БК
+        // ИСПРАВЛЕНО (АВТОНОМНЫЙ ХОД): Пушка БОЛЬШЕ НЕ обнуляет патроны принудительно в Player.ts!
+        // Она уходит на дозарядку ТОЛЬКО когда БК реально равен 0 и ТОЛЬКО если есть связь со складом!
         if (this.currentAmmo <= 0) {
             if (this.isSupplied) {
                 this.isReloading = true;
@@ -147,7 +145,7 @@ export class SimpleTurret {
 
         // 3. Боевой тик или накопление таймера тактического затишья
         if (this.currentTarget) {
-            this.idleReloadTimer = 0; // Идет бой, таймер покоя сброшен
+            this.idleReloadTimer = 0; 
 
             const dx = this.currentTarget.x - this.x;
             const dy = this.currentTarget.y - this.y;
@@ -166,32 +164,25 @@ export class SimpleTurret {
                         this.currentTarget.attackers.push(this as any);
                     }
 
-                    // Если расстреляли всё до нуля — уходим на перезарядку
                     if (this.currentAmmo <= 0) {
-                        this.isReloading = true;
+                        if (this.isSupplied) {
+                            this.isReloading = true;
+                        }
                         this.currentTarget = null;
                     }
                 }
             }
         } else {
-            // =========================================================================
-            // НЮАНСЫ ИГРОКА: ЛОГИКА ТАКТИЧЕСКОЙ ДОЗАРЯДКИ С УЧЕТОМ ДЕФИЦИТА
-            // =========================================================================
             if (this.isSupplied) {
-                // Перезарядка в затишье разрешена ТОЛЬКО если текущих патронов МЕНЬШЕ, 
-                // чем склад физически готов нам выдать в текущем состоянии нагрузки!
-                // Если у нас 10 или 7 патронов, а текущий лимит дефицита склада равен 5:
-                // Условие (7 < 5) выдаст false — перезарядка НЕ НАЧНЕТСЯ, излишки патронов не сгорят!
                 if (this.currentAmmo < currentMaxCapacity) {
                     this.idleReloadTimer += deltaTime;
                     
                     if (this.idleReloadTimer >= this.idleReloadDelay) {
                         this.isReloading = true;
                         this.attackTimer = 0;
-                        console.log(`[Автоматика ПВО]: Патроны ниже лимита (${this.currentAmmo} < ${currentMaxCapacity}). Перезарядка.`);
                     }
                 } else {
-                    this.idleReloadTimer = 0; // Излишков БК хватает или магазин полон
+                    this.idleReloadTimer = 0; 
                 }
             } else {
                 this.idleReloadTimer = 0;

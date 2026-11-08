@@ -105,7 +105,6 @@ export class Player {
         
         // ПРОХОД А: Сначала просто привязываем пушки и собираем ИТОГОВУЮ нагрузку на каждый склад
         this.turrets.forEach(turret => {
-            // Ищем склад боеприпасов в радиусе 350px
             const depot = ammoDepots.find(a => {
                 const distSq = (a.x - turret.x) ** 2 + (a.y - turret.y) ** 2;
                 return distSq <= a.supplyRadius * a.supplyRadius;
@@ -113,14 +112,13 @@ export class Player {
 
             if (depot) {
                 turret.isSupplied = true;
-                depot.connectedTurretsCount++; // Склад накапливает суммарный счетчик
-                // Временно сохраняем ссылку на склад внутри пушки (для прохода Б)
+                depot.connectedTurretsCount++; 
                 (turret as any)._currentDepot = depot; 
             } else {
                 turret.isSupplied = false;
                 turret.hasPenalty = false;
                 (turret as any)._currentDepot = null;
-                turret.currentAmmo = 0; 
+                // ИСПРАВЛЕНО: СТРОКА turret.currentAmmo = 0 УБРАНА! Патроны остаются в машине!
             }
         });
 
