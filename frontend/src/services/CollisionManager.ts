@@ -8,7 +8,6 @@ export class CollisionManager {
      */
     public checkSuicideStrikes(invader: SimpleInvader, buildings: SimpleBuilding[]): boolean {
         for (const building of buildings) {
-            if (building.isDestroyed) continue;
 
             // Считаем дельту расстояния между центрами дрона и бункера
             const dx = invader.x - building.x;

@@ -50,15 +50,19 @@ export class EnemySwarm {
     /**
      * ЦЕНТРАЛЬНЫЙ ТАКТИЧЕСКИЙ АПДЕЙТ РОЯ БПЛА
      */
-    public update(deltaTime: number, collisionManager: CollisionManager, playerBuildings: Array<SimpleBuilding>): number {
+        public update(deltaTime: number, collisionManager: CollisionManager, playerBuildings: Array<SimpleBuilding>): number {
         let downedInvadersCount = 0;
         const hazards = this.routeManager.getDiscoveredHazards();
 
         // СИТУАЦИЯ 2: РЕАКЦИЯ НА УНИЧТОЖЕНИЕ ЗДАНИЙ (Тактическое перенацеливание волны)
-        // Если у какой-то точки взлёта её цель была уничтожена — принудительно перенаправляем её на живой объект!
+        // ИСПРАВЛЕНО: Теперь точка взлёта проверяет, ОСТАЛОСЬ ЛИ здание в живых в общем массиве playerBuildings!
+        // Если здания физически больше нет в списке — принудительно перенаправляем рой на живой объект!
         this.spawnNodes.forEach(node => {
-            if (node.currentTargetBuilding && node.currentTargetBuilding.isDestroyed) {
-                node.triggerRecalculate(hazards, playerBuildings);
+            if (node.currentTargetBuilding) {
+                const isStillAlive = playerBuildings.includes(node.currentTargetBuilding);
+                if (!isStillAlive) {
+                    node.triggerRecalculate(hazards, playerBuildings);
+                }
             }
         });
 
@@ -76,6 +80,22 @@ export class EnemySwarm {
             
             let shouldRespawn = collisionManager.checkSuicideStrikes(invader, playerBuildings);
 
+            // =========================================================================
+            // ЖЁСТКИЙ АРХИТЕКТУРНЫЙ ФИКС: УДАЛЕНИЕ РАЗРУШЕННОГО ЗДАНИЯ ИЗ МАССИВА
+            // =========================================================================
+            if (shouldRespawn) {
+                // Ищем в массиве здание, чьё здоровье упало до 0 после этого удара
+                for (let j = playerBuildings.length - 1; j >= 0; j--) {
+                    const b = playerBuildings[j];
+                    if (b.hp <= 0) {
+                        console.log(`[EnemySwarm]: СТИРАНИЕ ОБЪЕКТА. Здание ${b.name} уничтожено. Удаляем из памяти базы.`);
+                        
+                        // Удаляем разрушенное здание из оригинального массива на месте (через splice)
+                        playerBuildings.splice(j, 1);
+                    }
+                }
+            }
+
             if (!shouldRespawn && (invader.y > 1200 || invader.hp <= 0)) {
                 if (invader.hp <= 0) {
                     downedInvadersCount++;
@@ -87,8 +107,6 @@ export class EnemySwarm {
                         const afterCount = this.routeManager.getDiscoveredHazards().length;
                         
                         // СИТУАЦИЯ 1: ТОЧЕЧНАЯ ЛОКАЛЬНАЯ РЕАКЦИЯ НА ПВО
-                        // Если вскрыта НОВАЯ пушка ПВО, мы запускаем пересчёт ТОЛЬКО для той 
-                        // конкретной родительской точки взлёта, чей дрон сейчас пострадал!
                         if (afterCount > beforeCount) {
                             const parentNodeIdx = this.spawnNodes.findIndex(node => node.x === invader.spawnPointX);
                             if (parentNodeIdx !== -1) {
@@ -120,4 +138,5 @@ export class EnemySwarm {
 
         return downedInvadersCount;
     }
+
 }

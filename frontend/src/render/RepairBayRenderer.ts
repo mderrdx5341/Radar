@@ -12,7 +12,6 @@ export class RepairBayRenderer {
         this.ctx.save();
 
         if (building.isDestroyed) {
-            this.drawDestroyedState(building);
             this.ctx.restore();
             return;
         }
@@ -67,24 +66,6 @@ export class RepairBayRenderer {
         this.ctx.fillText(`${building.connectedBuildingsCount}/${building.maxSafeLoad}`, building.x - 4, indicatorY - 1);
 
         this.ctx.restore();
-    }
-
-    private drawDestroyedState(building: RepairBay): void {
-        this.ctx.fillStyle = '#21262d';
-        this.ctx.strokeStyle = '#30363d';
-        this.ctx.lineWidth = 2;
-        this.ctx.beginPath();
-        this.ctx.arc(building.x, building.y, building.radius, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.stroke();
-
-        this.ctx.strokeStyle = '#ff4444';
-        this.ctx.beginPath();
-        this.ctx.moveTo(building.x - 10, building.y - 10);
-        this.ctx.lineTo(building.x + 10, building.y + 10);
-        this.ctx.moveTo(building.x + 10, building.y - 10);
-        this.ctx.lineTo(building.x - 10, building.y + 10);
-        this.ctx.stroke();
     }
 
     private drawHealthBar(building: RepairBay): void {
