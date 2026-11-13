@@ -5,3 +5,5 @@ www/*
 !www/index.html
 .scannerwork
 sonar-project.properties
+/.gigaide/
+/.idea/
